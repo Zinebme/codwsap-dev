@@ -5,8 +5,7 @@ import { deliverQueuedMessage, markMessageFailed, refreshAvailabilityEvidence } 
 import { refreshTracking } from "@/server/services/delivery";
 import { runNoResponseReminder } from "@/server/services/automations";
 import { syncGoogleSheet, safeJson } from "@/server/connectors/orders";
-import { decryptSecret } from "@/server/crypto";
-import { apiLog } from "@/server/services/audit";
+import { sendTelegramAlert } from "@/server/services/telegram";
 import { notify } from "@/server/services/notifications";
 
 /** Libellés non techniques des traitements de fond, pour les alertes marchand. */
@@ -76,21 +75,10 @@ async function handle(job: Job): Promise<void> {
       return;
     }
     case "notify_telegram": {
-      const integ = await get<{ credentials_encrypted: string | null }>(
-        "SELECT credentials_encrypted FROM integrations WHERE merchant_id = ? AND kind = 'telegram' AND status = 'connected' LIMIT 1",
-        [job.merchant_id],
-      );
-      const creds = decryptSecret<{ bot_token?: string; chat_id?: string }>(integ?.credentials_encrypted);
-      if (!creds?.bot_token || !creds.chat_id) return;
-      const text = `*${payload.title}*\n${payload.body ?? ""}`;
-      const res = await fetch(`https://api.telegram.org/bot${creds.bot_token}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: creds.chat_id, text, parse_mode: "Markdown" }),
-        signal: AbortSignal.timeout(10000),
-      });
-      await apiLog({ merchantId: job.merchant_id, service: "telegram", operation: "sendMessage", ok: res.ok, statusCode: res.status });
-      if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
+      const res = await sendTelegramAlert(job.merchant_id!, payload.title, payload.body);
+      // « non configuré » n'est pas un échec : le marchand a déconnecté
+      // Telegram, la notification dashboard reste la seule voie.
+      if (!res.ok && res.configured) throw new Error(res.error);
       return;
     }
     default:

@@ -49,6 +49,7 @@ npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, r
 npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
 npm run test:whatsapp    # 22 tests WhatsApp (variables de template, preuves de disponibilité, alertes)
 npm run test:sheets      # 28 tests du chemin de données Google Sheets / CSV (hors ligne)
+npm run test:telegram    # 17 tests des alertes Telegram (fetch substitué, hors ligne)
 ```
 
 ## Variables d'environnement
