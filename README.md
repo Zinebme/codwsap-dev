@@ -52,6 +52,8 @@ npm run test:sheets      # 28 tests du chemin de données Google Sheets / CSV (h
 npm run test:telegram    # 17 tests des alertes Telegram (fetch substitué, hors ligne)
 ```
 
+→ Audit final (vérifié vs bloqué sur identifiants) : [`docs/GAP_AUDIT.md`](docs/GAP_AUDIT.md)
+
 ## Variables d'environnement
 
 | Variable | Rôle |
