@@ -384,6 +384,20 @@ export async function markMessageFailed(messageId: string, error: string) {
   await run("UPDATE whatsapp_messages SET status = 'failed', failed_at = ?, error_message = ? WHERE id = ?", [nowIso(), error.slice(0, 400), messageId]);
   if (!msg) return;
   if (msg.order_id) await run("UPDATE orders SET whatsapp_status = 'failed', attention = 1 WHERE id = ?", [msg.order_id]);
+  // « Message échoué → alerte tableau de bord » est une AUTOMATISATION : elle
+  // respecte son interrupteur. (Requête directe : automations.ts importe ce
+  // module, l'inverse créerait une dépendance circulaire.)
+  const automation = await get<{ id: string; enabled: number }>(
+    "SELECT id, enabled FROM automations WHERE merchant_id = ? AND type = 'failed_message_alert'",
+    [msg.merchant_id],
+  );
+  if (automation && !automation.enabled) {
+    await run(
+      "INSERT INTO automation_runs (id, merchant_id, automation_id, order_id, trigger, result, reason) VALUES (?,?,?,?,?,?,?)",
+      [uid("run"), msg.merchant_id, automation.id, msg.order_id, "message.failed", "skipped", "automation_disabled"],
+    );
+    return;
+  }
   await notify({
     merchantId: msg.merchant_id,
     type: "message_failed",
@@ -392,6 +406,12 @@ export async function markMessageFailed(messageId: string, error: string) {
     body: error.slice(0, 200),
     link: msg.order_id ? `/dashboard/orders?order=${msg.order_id}` : "/dashboard/whatsapp/logs",
   });
+  if (automation) {
+    await run(
+      "INSERT INTO automation_runs (id, merchant_id, automation_id, order_id, trigger, result, reason) VALUES (?,?,?,?,?,?,?)",
+      [uid("run"), msg.merchant_id, automation.id, msg.order_id, "message.failed", "sent", null],
+    );
+  }
 }
 
 /**

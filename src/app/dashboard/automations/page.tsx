@@ -3,11 +3,11 @@
 import * as React from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { Zap, AlertTriangle, CheckCircle2, ShieldCheck, Clock } from "lucide-react";
+import { Zap, AlertTriangle, CheckCircle2, ShieldCheck, Clock, Eye } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
-import { Card, CardHeader, CardTitle, Badge, Button, Select, Toggle, Skeleton, EmptyState, useToast } from "@/components/ui";
+import { Card, CardHeader, CardTitle, Badge, Button, Select, Toggle, Skeleton, EmptyState, Modal, useToast } from "@/components/ui";
 import { AUTOMATION_META, type AutomationType } from "@/lib/domain";
 import { SUPPRESSION_LABELS_CLIENT } from "../orders/labels";
 
@@ -36,6 +36,36 @@ export default function AutomationsPage() {
   const ar = locale === "ar";
   const { push } = useToast();
   const { data, isLoading, mutate } = useSWR<{ rows: Automation[]; templates: Tpl[]; runs: Run[] }>("/api/automations", fetcher, { refreshInterval: 60_000 });
+  const [preview, setPreview] = React.useState<{ title: string; body?: string; error?: string; templateName?: string; templateStatus?: string } | null>(null);
+  const [previewBusy, setPreviewBusy] = React.useState(false);
+
+  async function showPreview(a: Automation) {
+    setPreviewBusy(true);
+    try {
+      const res = await fetch("/api/automations/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automationId: a.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPreview({ title: ar ? "معاينة" : "Aperçu", error: json.error ?? "Erreur" });
+      } else if (!json.ok) {
+        setPreview({ title: ar ? "معاينة" : "Aperçu", error: json.error });
+      } else {
+        setPreview({
+          title: ar ? "معاينة الرسالة" : "Aperçu du message",
+          body: json.body,
+          templateName: json.templateName,
+          templateStatus: json.templateStatus,
+        });
+      }
+    } catch {
+      setPreview({ title: ar ? "معاينة" : "Aperçu", error: ar ? "تعذر الاتصال." : "Serveur injoignable." });
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
 
   async function patch(id: string, body: Record<string, unknown>) {
     const res = await fetch(`/api/automations/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -122,6 +152,15 @@ export default function AutomationsPage() {
                   <span>{ar ? "عمليات" : "Exécutions"} : <b className="text-ink-800">{f.num(a.run_count)}</b></span>
                   <span>{ar ? "موقوفة" : "Bloquées"} : <b className="text-ink-800">{f.num(a.suppressed_count)}</b></span>
                   <span className={a.failure_count ? "text-red-600" : ""}>{ar ? "أخطاء" : "Échecs"} : <b>{f.num(a.failure_count)}</b></span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ms-auto h-6 px-2 text-[11.5px]"
+                    loading={previewBusy}
+                    onClick={() => showPreview(a)}
+                  >
+                    <Eye className="h-3 w-3" /> {ar ? "معاينة" : "Aperçu"}
+                  </Button>
                 </div>
               </Card>
             );
@@ -162,6 +201,36 @@ export default function AutomationsPage() {
           </div>
         )}
       </Card>
+
+      <Modal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        title={preview?.title ?? ""}
+        footer={<Button onClick={() => setPreview(null)}>{ar ? "إغلاق" : "Fermer"}</Button>}
+      >
+        {preview?.error ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">{preview.error}</div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-[12px] text-ink-500">
+              <Badge tone="gray">{preview?.templateName}</Badge>
+              {preview?.templateStatus && (
+                <Badge tone={preview.templateStatus === "approved" ? "green" : "amber"}>
+                  {preview.templateStatus === "approved" ? (ar ? "معتمد" : "Approuvé") : preview.templateStatus}
+                </Badge>
+              )}
+            </div>
+            <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3.5 text-[13px] leading-relaxed text-ink-800 whitespace-pre-wrap">
+              {preview?.body}
+            </div>
+            <p className="text-[11.5px] text-ink-400">
+              {ar
+                ? "معاينة بقيم مثال فقط — لا يتم إرسال أي شيء. القيم الحقيقية تُستخرج من كل طلب."
+                : "Aperçu avec des valeurs d'exemple — aucun message n'est envoyé. Les valeurs réelles sont extraites de chaque commande."}
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

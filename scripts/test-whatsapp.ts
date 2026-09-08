@@ -243,6 +243,58 @@ async function main() {
     renderTemplate("A {{1}} / {{customer_name}} / {{manquant}}", { "1": "X", customer_name: "Y" }) === "A X / Y / ",
   );
 
+  console.log("\n── Alerte « message échoué » : interrupteur réel ───────────");
+  // L'automatisation failed_message_alert est semée pour chaque marchand ;
+  // son interrupteur doit être respecté par markMessageFailed.
+  const { markMessageFailed } = await import("../src/server/services/messaging");
+  const { seedAutomations } = await import("../src/server/services/automations");
+  await seedAutomations(merchantId);
+  const alertAutomation = await get<{ id: string; enabled: number }>(
+    "SELECT id, enabled FROM automations WHERE merchant_id = ? AND type = 'failed_message_alert'",
+    [merchantId],
+  );
+  record("Automatisation d'alerte semée et active", !!alertAutomation && alertAutomation.enabled === 1);
+
+  // Un message qui échoue définitivement -> notification + trace d'exécution.
+  const failingMsgId = uid("msg");
+  await run(
+    `INSERT INTO whatsapp_messages (id, merchant_id, conversation_id, customer_id, direction, kind, status, created_at)
+     VALUES (?,?,NULL, NULL,'outbound','text','failed',?)`,
+    [failingMsgId, merchantId, nowIso()],
+  );
+  await markMessageFailed(failingMsgId, "HTTP 500 côté Meta");
+  const alertRun = await get<{ result: string; reason: string | null }>(
+    "SELECT result, reason FROM automation_runs WHERE merchant_id = ? AND trigger = 'message.failed' ORDER BY created_at DESC LIMIT 1",
+    [merchantId],
+  );
+  const alertNotif = await get<{ id: string }>(
+    "SELECT id FROM notifications WHERE merchant_id = ? AND type = 'message_failed' ORDER BY created_at DESC LIMIT 1",
+    [merchantId],
+  );
+  record("Alerte émise et journalisée quand l'automatisation est active", alertRun?.result === "sent" && !!alertNotif);
+
+  // Interrupteur coupé -> plus aucune notification, trace « skipped ».
+  await run("UPDATE automations SET enabled = 0 WHERE id = ?", [alertAutomation!.id]);
+  const notifCountBefore = Number(
+    (await get<{ c: number }>("SELECT COUNT(*) AS c FROM notifications WHERE merchant_id = ? AND type = 'message_failed'", [merchantId]))?.c,
+  );
+  const failingMsgId2 = uid("msg");
+  await run(
+    `INSERT INTO whatsapp_messages (id, merchant_id, conversation_id, customer_id, direction, kind, status, created_at)
+     VALUES (?,?,NULL, NULL,'outbound','text','failed',?)`,
+    [failingMsgId2, merchantId, nowIso()],
+  );
+  await markMessageFailed(failingMsgId2, "HTTP 500 côté Meta");
+  const notifCountAfter = Number(
+    (await get<{ c: number }>("SELECT COUNT(*) AS c FROM notifications WHERE merchant_id = ? AND type = 'message_failed'", [merchantId]))?.c,
+  );
+  const skippedRun = await get<{ result: string; reason: string | null }>(
+    "SELECT result, reason FROM automation_runs WHERE merchant_id = ? AND trigger = 'message.failed' AND reason = 'automation_disabled' LIMIT 1",
+    [merchantId],
+  );
+  record("Interrupteur respecté : aucune alerte quand désactivée", notifCountAfter === notifCountBefore);
+  record("Échec journalisé comme « skipped » (traçabilité)", skippedRun?.result === "skipped" && skippedRun?.reason === "automation_disabled");
+
   console.log("\n── Résultat ────────────────────────────────────────────────");
   const passed = results.filter((r) => r.ok).length;
   console.log(`  ${passed}/${results.length} tests réussis\n`);

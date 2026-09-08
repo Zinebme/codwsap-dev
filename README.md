@@ -47,7 +47,7 @@ npm run test:auth        # 24 tests d'authentification et de liaison d'identité
 npm run test:delivery    # 24 tests du catalogue et des moteurs de livraison (hors ligne)
 npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, retrait)
 npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
-npm run test:whatsapp    # 18 tests WhatsApp (variables de template, preuves de disponibilité)
+npm run test:whatsapp    # 22 tests WhatsApp (variables de template, preuves de disponibilité, alertes)
 ```
 
 ## Variables d'environnement
