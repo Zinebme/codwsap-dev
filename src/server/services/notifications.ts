@@ -19,7 +19,8 @@ export type NotificationType =
   | "template_rejected"
   | "high_failure_rate"
   | "low_quality_warning"
-  | "subscription_issue";
+  | "subscription_issue"
+  | "job_failed";
 
 export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   new_order: "Nouvelle commande",
@@ -39,6 +40,7 @@ export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   high_failure_rate: "Taux d'échec WhatsApp élevé",
   low_quality_warning: "Alerte qualité WhatsApp",
   subscription_issue: "Problème d'abonnement",
+  job_failed: "Traitement de fond en échec",
 };
 
 /** Events that are noisy by default and therefore opt-in only. */

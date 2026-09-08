@@ -7,6 +7,17 @@ import { runNoResponseReminder } from "@/server/services/automations";
 import { syncGoogleSheet, safeJson } from "@/server/connectors/orders";
 import { decryptSecret } from "@/server/crypto";
 import { apiLog } from "@/server/services/audit";
+import { notify } from "@/server/services/notifications";
+
+/** Libellés non techniques des traitements de fond, pour les alertes marchand. */
+const JOB_TITLES: Record<string, string> = {
+  send_whatsapp: "Message WhatsApp non envoyé",
+  poll_delivery: "Synchronisation du suivi colis",
+  sync_sheet: "Synchronisation Google Sheets",
+  reminder: "Rappel client",
+  notify_telegram: "Notification Telegram",
+  wa_availability_check: "Vérification des numéros WhatsApp",
+};
 
 async function handle(job: Job): Promise<void> {
   const payload = safeJson<Record<string, string>>(job.payload) ?? {};
@@ -84,6 +95,18 @@ export async function runWorker(limit = 20): Promise<{ processed: number; failed
         if (job.type === "send_whatsapp") {
           const payload = safeJson<{ messageId: string }>(job.payload);
           if (payload?.messageId) await markMessageFailed(payload.messageId, (e as Error).message);
+        }
+        // « 3 tentatives puis alerte » : le marchand est prévenu, le super
+        // admin voit le détail dans la console d'observabilité.
+        if (job.merchant_id) {
+          await notify({
+            merchantId: job.merchant_id,
+            type: "job_failed",
+            severity: "error",
+            title: JOB_TITLES[job.type] ?? "Traitement de fond en échec",
+            body: (e as Error).message.slice(0, 160),
+            link: "/dashboard/notifications",
+          });
         }
       }
     }

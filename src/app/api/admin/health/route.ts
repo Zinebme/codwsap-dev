@@ -40,6 +40,22 @@ export async function GET() {
       providerRequests: await all("SELECT p.*, m.name AS merchant_name FROM provider_requests p LEFT JOIN merchants m ON m.id = p.merchant_id ORDER BY p.created_at DESC LIMIT 20"),
       audits: await all("SELECT a.*, m.name AS merchant_name FROM audit_logs a LEFT JOIN merchants m ON m.id = a.merchant_id ORDER BY a.created_at DESC LIMIT 40"),
       plans: await all("SELECT * FROM plans ORDER BY sort_order"),
+      // File de traitements : tout ce qui n'est pas terminé, pour agir dessus.
+      jobQueue: await all(
+        `SELECT j.id, j.type, j.status, j.attempts, j.max_attempts, j.run_after, j.updated_at, j.last_error, j.merchant_id,
+                m.name AS merchant_name
+         FROM jobs j LEFT JOIN merchants m ON m.id = j.merchant_id
+         WHERE j.status != 'done'
+         ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, j.updated_at DESC
+         LIMIT 30`,
+      ),
+      // Tendance 7 jours : appels et échecs d'intégrations par jour.
+      trend: await all(
+        `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS calls, SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failures
+         FROM api_logs WHERE created_at >= ?
+         GROUP BY substr(created_at, 1, 10) ORDER BY day`,
+        [new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 19).replace("T", " ")],
+      ),
     });
   } catch (e) {
     return jsonError(e);

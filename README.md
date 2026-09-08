@@ -46,6 +46,7 @@ npm run test:isolation   # 37 tests d'isolation et de sécurité, PostgreSQL ré
 npm run test:auth        # 24 tests d'authentification et de liaison d'identités
 npm run test:delivery    # 24 tests du catalogue et des moteurs de livraison (hors ligne)
 npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, retrait)
+npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
 ```
 
 ## Variables d'environnement
