@@ -3,7 +3,7 @@ import { get, run, uid, all, nowIso } from "@/server/db";
 import { getWhatsappProvider, renderTemplate } from "@/server/connectors/whatsapp";
 import { notify } from "@/server/services/notifications";
 import { enqueueJob } from "@/server/jobs/queue";
-import type { AutomationType } from "@/lib/domain";
+import { formatDzd, type AutomationType } from "@/lib/domain";
 
 /**
  * WhatsApp quality protection engine.
@@ -55,6 +55,40 @@ export type SendOutcome = {
 const URGENT_EVENTS: AutomationType[] = ["new_order_confirmation", "at_office_notice"];
 /** Delivery events that are NOT worth a customer message (courier internals). */
 const NON_CUSTOMER_EVENTS = new Set(["created", "submitted", "accepted", "in_transit"]);
+
+export type OrderVariableRow = {
+  customer_name: string | null;
+  reference: string;
+  total: number;
+  tracking_number: string | null;
+  wilaya: string | null;
+  commune: string | null;
+};
+
+/**
+ * Variables disponibles pour un template, positionnelles ({{1}}, {{2}}…) et
+ * nommées. Utilisée par les automatisations ET par l'envoi manuel de template
+ * depuis une conversation rattachée à une commande.
+ */
+export function orderVariables(order: OrderVariableRow): Record<string, string> {
+  return {
+    "1": order.customer_name ?? "client",
+    "2": order.reference,
+    "3": formatDzd(order.total),
+    customer_name: order.customer_name ?? "client",
+    order_ref: order.reference,
+    total: formatDzd(order.total),
+    tracking: order.tracking_number ?? "",
+    wilaya: order.wilaya ?? "",
+    commune: order.commune ?? "",
+  };
+}
+
+/** Valeurs ordonnées d'un template : l'API Cloud Meta attend des paramètres
+ *  positionnels dans le composant « body », dans l'ordre de ses variables. */
+export function orderedTemplateValues(placeholderNames: string[], vars: Record<string, string>): string[] {
+  return placeholderNames.map((name) => vars[name] ?? vars[`v${name}`] ?? "");
+}
 
 export function isCustomerRelevantDeliveryStatus(normalized: string): boolean {
   return !NON_CUSTOMER_EVENTS.has(normalized);
@@ -211,19 +245,42 @@ export async function queueMessage(req: SendRequest): Promise<SendOutcome> {
 
   let body = req.text ?? "";
   let templateName: string | null = null;
+  let templateVariables: string | null = null;
 
   if (req.templateId) {
-    const tpl = await get<{ name: string; body: string; language: string }>("SELECT name, body, language FROM whatsapp_templates WHERE id = ?", [req.templateId]);
+    const tpl = await get<{ name: string; body: string; language: string; variables: string | null }>(
+      "SELECT name, body, language, variables FROM whatsapp_templates WHERE id = ?",
+      [req.templateId],
+    );
     if (!tpl) return { status: "suppressed", reason: "template_missing" };
     templateName = tpl.name;
-    body = renderTemplate(tpl.body, req.variables ?? {});
+    // Envoi manuel depuis une conversation : sans variables explicites, on
+    // remplit celles de la commande rattachée (même jeu que les automatisations).
+    let vars = req.variables ?? {};
+    if (!Object.keys(vars).length && req.orderId) {
+      const order = await get<OrderVariableRow>(
+        "SELECT customer_name, reference, total, tracking_number, wilaya, commune FROM orders WHERE id = ? AND merchant_id = ?",
+        [req.orderId, req.merchantId],
+      );
+      if (order) vars = orderVariables(order);
+    }
+    body = renderTemplate(tpl.body, vars);
+    // L'API Cloud Meta exige les VALEURS des variables en paramètres positionnels :
+    // le corps rendu localement ne suffit pas.
+    let placeholderNames: string[] = [];
+    try {
+      placeholderNames = tpl.variables ? JSON.parse(tpl.variables) : [];
+    } catch {
+      placeholderNames = [];
+    }
+    templateVariables = JSON.stringify(orderedTemplateValues(placeholderNames, vars));
   }
 
   const id = uid("msg");
   await run(
     `INSERT INTO whatsapp_messages
-      (id, merchant_id, conversation_id, order_id, customer_id, direction, kind, template_id, template_name, body, status, queued_at, automation_id, dedupe_key, is_test)
-     VALUES (?,?,?,?,?,'outbound',?,?,?,?, 'queued', ?, ?, ?, ?)`,
+      (id, merchant_id, conversation_id, order_id, customer_id, direction, kind, template_id, template_name, template_variables, body, status, queued_at, automation_id, dedupe_key, is_test)
+     VALUES (?,?,?,?,?,'outbound',?,?,?,?,?, 'queued', ?, ?, ?, ?)`,
     [
       id,
       req.merchantId,
@@ -233,6 +290,7 @@ export async function queueMessage(req: SendRequest): Promise<SendOutcome> {
       req.templateId ? "template" : "text",
       req.templateId ?? null,
       templateName,
+      templateVariables,
       body,
       nowIso(),
       req.automationId ?? null,
@@ -267,6 +325,7 @@ export async function deliverQueuedMessage(messageId: string): Promise<{ ok: boo
     kind: string;
     template_id: string | null;
     template_name: string | null;
+    template_variables: string | null;
     body: string;
     status: string;
     attempts: number;
@@ -283,18 +342,24 @@ export async function deliverQueuedMessage(messageId: string): Promise<{ ok: boo
   // La langue doit être celle du modèle approuvé par Meta (fr ou ar) : un code
   // de langue erroné fait rejeter le message par l'API Cloud.
   let templateLanguage = "fr";
+  let templateValues: string[] = [];
   if (msg.template_id) {
     const tpl = await get<{ language: string }>("SELECT language FROM whatsapp_templates WHERE id = ? AND merchant_id = ?", [
       msg.template_id,
       msg.merchant_id,
     ]);
     if (tpl?.language) templateLanguage = tpl.language;
+    try {
+      templateValues = msg.template_variables ? JSON.parse(msg.template_variables) : [];
+    } catch {
+      templateValues = [];
+    }
   }
 
   const { provider } = await getWhatsappProvider(msg.merchant_id);
   const result =
     msg.kind === "template" && msg.template_name
-      ? await provider.sendTemplate(to, msg.template_name, templateLanguage, [], msg.body)
+      ? await provider.sendTemplate(to, msg.template_name, templateLanguage, templateValues, msg.body)
       : await provider.sendText(to, msg.body);
 
   await run("UPDATE whatsapp_messages SET attempts = attempts + 1 WHERE id = ?", [messageId]);
@@ -327,6 +392,53 @@ export async function markMessageFailed(messageId: string, error: string) {
     body: error.slice(0, 200),
     link: msg.order_id ? `/dashboard/orders?order=${msg.order_id}` : "/dashboard/whatsapp/logs",
   });
+}
+
+/**
+ * Rapproche le statut WhatsApp des clients avec les preuves de livraison.
+ *
+ * L'API Cloud n'expose PAS de point de terminaison officiel « ce numéro est-il
+ * sur WhatsApp ? » : on ne devine jamais. En revanche, les accusés de réception
+ * sont des preuves officielles :
+ *   - un message sortant « delivered » prouve que le numéro utilise WhatsApp ;
+ *   - un échec 131026 (« message non distribuable », typiquement un numéro non
+ *     inscrit) est une présomption d'indisponibilité — jamais opposable à une
+ *     preuve de livraison ultérieure ou antérieure.
+ *
+ * Exécuté par le traitement planifié (job wa_availability_check) ; la même
+ * règle est appliquée en temps réel par le webhook des statuts.
+ */
+export async function refreshAvailabilityEvidence(merchantId: string): Promise<{ available: number; unavailable: number }> {
+  await run(
+    `UPDATE customers SET whatsapp_status = 'available', whatsapp_checked_at = ?, whatsapp_check_source = 'delivery_receipt'
+     WHERE merchant_id = ? AND whatsapp_status != 'available'
+       AND EXISTS (
+         SELECT 1 FROM whatsapp_messages m
+         WHERE m.merchant_id = ? AND m.customer_id = customers.id
+           AND m.direction = 'outbound' AND m.status = 'delivered'
+       )`,
+    [nowIso(), merchantId, merchantId],
+  );
+  await run(
+    `UPDATE customers SET whatsapp_status = 'unavailable', whatsapp_checked_at = ?, whatsapp_check_source = 'delivery_failure'
+     WHERE merchant_id = ? AND whatsapp_status = 'unknown'
+       AND EXISTS (
+         SELECT 1 FROM whatsapp_messages m
+         WHERE m.merchant_id = ? AND m.customer_id = customers.id
+           AND m.direction = 'outbound' AND m.status = 'failed' AND m.error_code = '131026'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM whatsapp_messages m2
+         WHERE m2.merchant_id = ? AND m2.customer_id = customers.id
+           AND m2.direction = 'outbound' AND m2.status = 'delivered'
+       )`,
+    [nowIso(), merchantId, merchantId, merchantId],
+  );
+  const counts = await get<{ a: number; u: number }>(
+    "SELECT SUM(CASE WHEN whatsapp_status = 'available' THEN 1 ELSE 0 END) AS a, SUM(CASE WHEN whatsapp_status = 'unavailable' THEN 1 ELSE 0 END) AS u FROM customers WHERE merchant_id = ?",
+    [merchantId],
+  );
+  return { available: Number(counts?.a ?? 0), unavailable: Number(counts?.u ?? 0) };
 }
 
 export async function bumpUsage(merchantId: string, metric: "orders" | "messages" | "delivery_api_calls") {

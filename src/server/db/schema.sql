@@ -338,6 +338,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   kind TEXT NOT NULL DEFAULT 'text', -- text | template | button_reply | system
   template_id TEXT,
   template_name TEXT,
+  -- Valeurs ordonnées des variables du template (JSON), telles qu'exigées par
+  -- l'API Cloud Meta : les paramètres du composant « body » sont positionnels.
+  template_variables TEXT,
   body TEXT,
   payload TEXT,
   status TEXT NOT NULL DEFAULT 'queued', -- queued | sent | delivered | read | failed | rejected | received

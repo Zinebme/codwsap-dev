@@ -1,7 +1,7 @@
 import "server-only";
 import { all, get, run, nowIso } from "@/server/db";
 import { claimJobs, completeJob, failJob, enqueueJob, type Job } from "@/server/jobs/queue";
-import { deliverQueuedMessage, markMessageFailed } from "@/server/services/messaging";
+import { deliverQueuedMessage, markMessageFailed, refreshAvailabilityEvidence } from "@/server/services/messaging";
 import { refreshTracking } from "@/server/services/delivery";
 import { runNoResponseReminder } from "@/server/services/automations";
 import { syncGoogleSheet, safeJson } from "@/server/connectors/orders";
@@ -55,6 +55,12 @@ async function handle(job: Job): Promise<void> {
     }
     case "reminder": {
       await runNoResponseReminder(payload.orderId);
+      return;
+    }
+    case "wa_availability_check": {
+      // Rapprochement fondé sur les preuves de livraison (aucune API
+      // d'interrogation de numéros n'existe côté Meta : on ne devine jamais).
+      await refreshAvailabilityEvidence(job.merchant_id!);
       return;
     }
     case "notify_telegram": {

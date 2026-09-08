@@ -54,6 +54,13 @@ export async function POST(req: Request) {
   );
   for (const m of merchants) await enqueueJob({ merchantId: m.merchant_id, type: "poll_delivery" });
 
+  // Rapprochement du statut WhatsApp des clients à partir des preuves de
+  // livraison (job local, aucun appel réseau : son coût est négligeable).
+  const waMerchants = await all<{ merchant_id: string }>(
+    "SELECT merchant_id FROM whatsapp_connections WHERE status = 'connected'",
+  );
+  for (const m of waMerchants) await enqueueJob({ merchantId: m.merchant_id, type: "wa_availability_check" });
+
   // Synchronisation automatique Google Sheets.
   const sheets = await all<{ id: string; merchant_id: string; settings: string | null }>(
     "SELECT id, merchant_id, settings FROM integrations WHERE kind = 'google_sheets' AND status IN ('connected','error')",
