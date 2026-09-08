@@ -4,6 +4,7 @@ import { jsonError, ok, parseBody } from "@/server/http";
 import { all, get, run, nowIso } from "@/server/db";
 import { audit } from "@/server/services/audit";
 import { NOTIFICATION_LABELS } from "@/server/services/notifications";
+import { pendingInvitations } from "@/server/services/team";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +24,12 @@ export async function GET() {
     const audits = ctx.can("settings.write")
       ? await all("SELECT * FROM audit_logs WHERE merchant_id = ? ORDER BY created_at DESC LIMIT 40", [ctx.merchantId])
       : [];
+    // Invitations en attente : lisibles par les admins (users.write), pas par les agents.
+    const invitations = ctx.can("users.write") ? await pendingInvitations(ctx.merchantId) : [];
     return ok({
       merchant,
       users,
+      invitations,
       prefs,
       subscription,
       usage,

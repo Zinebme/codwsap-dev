@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import { Building2, Users, MessageCircle, Truck, Table2, Zap, Bell, FileText, Shield, CreditCard, Plus, LogOut } from "lucide-react";
+import { Building2, Users, MessageCircle, Truck, Table2, Zap, Bell, FileText, Shield, CreditCard, Plus, LogOut, Link2, Trash2, XCircle } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
@@ -15,6 +15,7 @@ import { WILAYAS } from "@/lib/domain";
 type Settings = {
   merchant: Record<string, string | number | null>;
   users: { id: string; role: string; status: string; user_id: string; full_name: string; email: string; last_login_at: string | null }[];
+  invitations: { id: string; email: string; full_name: string | null; role: string; expires_at: string; created_at: string }[];
   prefs: { event_type: string; dashboard: number; telegram: number; email: number }[];
   subscription: Record<string, string | null> | null;
   usage: { metric: string; value: number }[];
@@ -161,13 +162,46 @@ function UsersSection({ data, ar, onSaved }: { data: Settings; ar: boolean; onSa
   const f = useFormat();
   const { push } = useToast();
   const [open, setOpen] = React.useState(false);
+  const [mode, setMode] = React.useState<"link" | "direct">("link");
+  const [link, setLink] = React.useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = React.useState<{ id: string; name: string } | null>(null);
   const canManage = data.role === "owner" || data.role === "admin";
+  const invitations = data.invitations ?? [];
+  const maxMembers = Number(data.plan?.max_team_members ?? 0);
+
+  async function revokeInvitation(id: string) {
+    const res = await fetch(`/api/settings/invitations?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return push({ variant: "error", title: json.error ?? "Erreur" });
+    }
+    push({ variant: "success", title: ar ? "تم إلغاء الدعوة" : "Invitation annulée" });
+    onSaved();
+  }
+
+  async function removeMember(id: string) {
+    const res = await fetch(`/api/settings/users?membershipId=${encodeURIComponent(id)}`, { method: "DELETE" });
+    setRemoveTarget(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      return push({ variant: "error", title: json.error ?? "Erreur" });
+    }
+    push({ variant: "success", title: ar ? "تمت إزالة العضو" : "Membre retiré de l'équipe" });
+    onSaved();
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{ar ? "فريق العمل" : "Équipe"}</CardTitle>
-        {canManage && <Button size="sm" variant="primary" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5" /> {ar ? "دعوة" : "Inviter"}</Button>}
+        <div>
+          <CardTitle>{ar ? "فريق العمل" : "Équipe"}</CardTitle>
+          {maxMembers > 0 && (
+            <p className="mt-0.5 text-[11.5px] text-ink-500">
+              {data.users.filter((u) => u.status === "active").length + invitations.length} / {maxMembers} {ar ? "مقاعد" : "places"}
+            </p>
+          )}
+        </div>
+        {canManage && <Button size="sm" variant="primary" onClick={() => { setOpen(true); setLink(null); setMode("link"); }}><Plus className="h-3.5 w-3.5" /> {ar ? "دعوة" : "Inviter"}</Button>}
       </CardHeader>
       <div className="overflow-x-auto">
         <table className="w-full text-[12.5px]">
@@ -204,17 +238,36 @@ function UsersSection({ data, ar, onSaved }: { data: Settings; ar: boolean; onSa
                 <td className="px-3 py-2 text-ink-500">{f.dateTime(u.last_login_at)}</td>
                 <td className="px-3 py-2 text-end">
                   {canManage && u.role !== "owner" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={async () => {
-                        await fetch("/api/settings/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membershipId: u.id, status: u.status === "active" ? "disabled" : "active" }) });
-                        onSaved();
-                      }}
-                    >
-                      {u.status === "active" ? (ar ? "تعطيل" : "Désactiver") : ar ? "تفعيل" : "Réactiver"}
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          await fetch("/api/settings/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ membershipId: u.id, status: u.status === "active" ? "disabled" : "active" }) });
+                          onSaved();
+                        }}
+                      >
+                        {u.status === "active" ? (ar ? "تعطيل" : "Désactiver") : ar ? "تفعيل" : "Réactiver"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" onClick={() => setRemoveTarget({ id: u.id, name: u.full_name })}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   )}
+                </td>
+              </tr>
+            ))}
+            {invitations.map((inv) => (
+              <tr key={inv.id} className="bg-amber-50/40">
+                <td className="px-3 py-2 font-medium text-ink-800">{inv.full_name ?? (ar ? "— بانتظار القبول —" : "— en attente —")}</td>
+                <td className="px-3 py-2 text-ink-600" dir="ltr">{inv.email}</td>
+                <td className="px-3 py-2"><Badge tone="gray">{inv.role}</Badge></td>
+                <td className="px-3 py-2"><Badge tone="amber" dot>{ar ? "دعوة مرسلة" : "Invitation en attente"}</Badge></td>
+                <td className="px-3 py-2 text-ink-500">{ar ? "تنتهي في" : "expire le"} {f.date(inv.expires_at)}</td>
+                <td className="px-3 py-2 text-end">
+                  <Button size="sm" variant="ghost" className="text-red-600 hover:bg-red-50" onClick={() => revokeInvitation(inv.id)}>
+                    <XCircle className="h-3.5 w-3.5" />
+                  </Button>
                 </td>
               </tr>
             ))}
@@ -222,46 +275,122 @@ function UsersSection({ data, ar, onSaved }: { data: Settings; ar: boolean; onSa
         </table>
       </div>
       <div className="border-t border-ink-100 p-3 text-[11.5px] text-ink-500">
-        {ar ? "الوكيل لا يمكنه الوصول إلى التكاملات أو الفوترة." : "Le rôle Agent n'a pas accès aux intégrations ni à la facturation."}
+        {ar
+          ? "الوكيل لا يمكنه الوصول إلى التكاملات أو الفوترة. تُنشأ الدعوة كرابط ترسله بنفسك (واتساب أو بريد)."
+          : "Le rôle Agent n'a pas accès aux intégrations ni à la facturation. Une invitation génère un lien à usage unique que vous transmettez vous-même (WhatsApp, email)."}
       </div>
 
       <Modal
         open={open}
         onClose={() => setOpen(false)}
         title={ar ? "دعوة عضو" : "Inviter un membre"}
-        footer={<><Button onClick={() => setOpen(false)}>{ar ? "إلغاء" : "Annuler"}</Button><Button variant="primary" type="submit" form="inv-form">{ar ? "إضافة" : "Ajouter"}</Button></>}
+        footer={<><Button onClick={() => setOpen(false)}>{ar ? "إلغاء" : "Fermer"}</Button>{!link && <Button variant="primary" type="submit" form="inv-form">{ar ? "إضافة" : "Ajouter"}</Button>}</>}
       >
-        <form
-          id="inv-form"
-          className="space-y-3.5"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const fd = new FormData(e.currentTarget);
-            const res = await fetch("/api/settings/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fullName: fd.get("fullName"), email: fd.get("email"), role: fd.get("role"), password: (fd.get("password") as string) || undefined }),
-            });
-            const json = await res.json();
-            if (!res.ok) return push({ variant: "error", title: json.error ?? "Erreur" });
-            push({
-              variant: "success",
-              title: ar ? "تمت الإضافة" : "Membre ajouté",
-              description: json.temporaryPassword ? `${ar ? "كلمة مرور مؤقتة" : "Mot de passe temporaire"} : ${json.temporaryPassword}` : undefined,
-            });
-            setOpen(false);
-            onSaved();
-          }}
-        >
-          <Field label={ar ? "الاسم الكامل" : "Nom complet"}><Input name="fullName" required /></Field>
-          <Field label="Email"><Input name="email" type="email" required dir="ltr" /></Field>
-          <Field label={ar ? "الدور" : "Rôle"}>
-            <Select name="role" defaultValue="agent"><option value="agent">Agent</option><option value="admin">Admin</option></Select>
-          </Field>
-          <Field label={ar ? "كلمة مرور (اختياري)" : "Mot de passe (optionnel)"} hint={ar ? "إذا تُرك فارغا سنولّد كلمة مؤقتة." : "Laissé vide, un mot de passe temporaire est généré."}>
-            <Input name="password" type="password" minLength={8} />
-          </Field>
-        </form>
+        {link ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-[13px] text-emerald-800">
+              {ar ? "تم إنشاء الدعوة. انسخ الرابط وأرسله للعضو — صالح لمرة واحدة." : "Invitation créée. Copiez ce lien et envoyez-le au membre — usage unique."}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={link} dir="ltr" className="text-[11.5px]" onFocus={(e) => e.currentTarget.select()} />
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(link);
+                    push({ variant: "success", title: ar ? "تم النسخ" : "Lien copié" });
+                  } catch {
+                    push({ variant: "error", title: ar ? "تعذر النسخ" : "Copie impossible" });
+                  }
+                }}
+              >
+                <Link2 className="h-3.5 w-3.5" /> {ar ? "نسخ" : "Copier"}
+              </Button>
+            </div>
+            <p className="text-[11.5px] text-ink-500">
+              {ar ? "عند قبول الدعوة، يختار العضو كلمة المرور الخاصة به." : "En acceptant, le membre choisit lui-même son mot de passe."}
+            </p>
+          </div>
+        ) : (
+          <form
+            id="inv-form"
+            className="space-y-3.5"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              if (mode === "link") {
+                const res = await fetch("/api/settings/invitations", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ email: fd.get("email"), role: fd.get("role"), fullName: (fd.get("fullName") as string) || undefined }),
+                });
+                const json = await res.json();
+                if (!res.ok) return push({ variant: "error", title: json.error ?? "Erreur" });
+                setLink(json.link);
+                onSaved();
+              } else {
+                const res = await fetch("/api/settings/users", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ fullName: fd.get("fullName"), email: fd.get("email"), role: fd.get("role"), password: (fd.get("password") as string) || undefined }),
+                });
+                const json = await res.json();
+                if (!res.ok) return push({ variant: "error", title: json.error ?? "Erreur" });
+                push({
+                  variant: "success",
+                  title: ar ? "تمت الإضافة" : "Membre ajouté",
+                  description: json.temporaryPassword ? `${ar ? "كلمة مرور مؤقتة" : "Mot de passe temporaire"} : ${json.temporaryPassword}` : undefined,
+                });
+                setOpen(false);
+                onSaved();
+              }
+            }}
+          >
+            <div className="flex gap-1 rounded-lg bg-ink-100 p-1 text-[12px]">
+              <button type="button" onClick={() => setMode("link")} className={cn("flex-1 rounded-md px-2 py-1.5 font-medium", mode === "link" ? "bg-white text-ink-900 shadow-sm" : "text-ink-500")}>
+                {ar ? "رابط دعوة (موصى به)" : "Lien d'invitation (recommandé)"}
+              </button>
+              <button type="button" onClick={() => setMode("direct")} className={cn("flex-1 rounded-md px-2 py-1.5 font-medium", mode === "direct" ? "bg-white text-ink-900 shadow-sm" : "text-ink-500")}>
+                {ar ? "إنشاء مباشر" : "Création directe"}
+              </button>
+            </div>
+            {mode === "link" && (
+              <Field label={ar ? "الاسم الكامل (اختياري)" : "Nom complet (optionnel)"}>
+                <Input name="fullName" minLength={2} maxLength={80} />
+              </Field>
+            )}
+            {mode === "direct" && (
+              <Field label={ar ? "الاسم الكامل" : "Nom complet"}><Input name="fullName" required /></Field>
+            )}
+            <Field label="Email"><Input name="email" type="email" required dir="ltr" /></Field>
+            <Field label={ar ? "الدور" : "Rôle"}>
+              <Select name="role" defaultValue="agent"><option value="agent">Agent</option><option value="admin">Admin</option></Select>
+            </Field>
+            {mode === "direct" && (
+              <Field label={ar ? "كلمة مرور (اختياري)" : "Mot de passe (optionnel)"} hint={ar ? "إذا تُرك فارغا سنولّد كلمة مؤقتة." : "Laissé vide, un mot de passe temporaire est généré."}>
+                <Input name="password" type="password" minLength={8} />
+              </Field>
+            )}
+            {mode === "link" && (
+              <p className="text-[11.5px] text-ink-500">
+                {ar ? "لا نرسل أي بريد: ستستلم الرابط لترسله بنفسك. صالح 7 أيام ولمرة واحدة." : "Aucun email n'est envoyé : vous recevez le lien pour le transmettre vous-même. Valable 7 jours, usage unique."}
+              </p>
+            )}
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!removeTarget}
+        onClose={() => setRemoveTarget(null)}
+        title={ar ? "إزالة العضو" : "Retirer le membre"}
+        footer={<><Button onClick={() => setRemoveTarget(null)}>{ar ? "إلغاء" : "Annuler"}</Button><Button variant="primary" className="bg-red-600 hover:bg-red-700" onClick={() => removeTarget && removeMember(removeTarget.id)}>{ar ? "إزالة" : "Retirer"}</Button></>}
+      >
+        <p className="text-[13px] text-ink-600">
+          {ar
+            ? `هل تريد إزالة ${removeTarget?.name} من الفريق؟ سيبقى حسابه وتاريخه محفوظين، لكنه لن يصل إلى هذه المتجر بعد الآن.`
+            : `Retirer ${removeTarget?.name} de l'équipe ? Son compte et son historique sont conservés, mais il n'aura plus accès à cette boutique.`}
+        </p>
       </Modal>
     </Card>
   );
