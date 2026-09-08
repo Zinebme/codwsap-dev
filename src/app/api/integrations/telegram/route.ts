@@ -1,33 +1,27 @@
 import { requirePermission } from "@/server/auth/session";
-import { jsonError, ok } from "@/server/http";
-import { get, run, nowIso } from "@/server/db";
-import { decryptSecret } from "@/server/crypto";
-import { apiLog } from "@/server/services/audit";
+import { jsonError, ok, rateLimit } from "@/server/http";
+import { sendTelegramAlert } from "@/server/services/telegram";
 
-/** Sends a test Telegram alert using the server-stored bot token. */
+/**
+ * Envoie une alerte Telegram de test avec le bot stocké côté serveur.
+ * Le chemin d'envoi est EXACTEMENT celui des alertes réelles
+ * (services/telegram.ts) : si ce test réussit, les notifications marcheront.
+ */
 export async function POST() {
   try {
     const ctx = await requirePermission("integrations.write");
-    const integ = await get<{ id: string; credentials_encrypted: string | null }>(
-      "SELECT id, credentials_encrypted FROM integrations WHERE merchant_id = ? AND kind = 'telegram'", [ctx.merchantId],
+    rateLimit(`telegram-test:${ctx.merchantId}`, 5, 60_000);
+    const res = await sendTelegramAlert(
+      ctx.merchantId,
+      "Connexion Telegram réussie",
+      "Vous recevrez ici vos alertes importantes (nouvelles commandes, échecs de livraison, webhooks).",
     );
-    const creds = decryptSecret<{ bot_token?: string; chat_id?: string }>(integ?.credentials_encrypted);
-    if (!creds?.bot_token || !creds.chat_id) return ok({ ok: false, message: "Configurez d'abord votre bot Telegram." });
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${creds.bot_token}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: creds.chat_id, text: "✅ Connexion Telegram réussie. Vous recevrez ici vos alertes importantes." }),
-        signal: AbortSignal.timeout(10000),
-      });
-      await apiLog({ merchantId: ctx.merchantId, service: "telegram", operation: "test", ok: res.ok, statusCode: res.status });
-      await run("UPDATE integrations SET status = ?, last_sync_at = ?, last_error = ? WHERE id = ?", [
-        res.ok ? "connected" : "error", res.ok ? nowIso() : null, res.ok ? null : `HTTP ${res.status}`, integ!.id,
-      ]);
-      return ok({ ok: res.ok, message: res.ok ? "Message de test envoyé sur Telegram." : "Telegram a refusé la requête. Vérifiez le token et le chat ID." });
-    } catch (err) {
-      return ok({ ok: false, message: "Telegram injoignable pour le moment.", technical: (err as Error).message });
-    }
+    if (!res.ok && !res.configured) return ok({ ok: false, message: "Configurez d'abord votre bot Telegram." });
+    return ok(
+      res.ok
+        ? { ok: true, message: "Message de test envoyé sur Telegram." }
+        : { ok: false, message: "Telegram a refusé la requête. Vérifiez le token et le chat ID.", technical: res.error },
+    );
   } catch (e) {
     return jsonError(e);
   }

@@ -123,11 +123,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ merchan
           if (!status) continue;
           const column = status === "read" ? "read_at" : status === "delivered" ? "delivered_at" : status === "failed" ? "failed_at" : "sent_at";
           await run(
-            `UPDATE whatsapp_messages SET status = ?, ${column} = ?, error_message = COALESCE(?, error_message) WHERE merchant_id = ? AND wa_message_id = ?`,
-            [status, nowIso(), st.errors?.[0]?.message ?? null, merchantId, st.id],
+            `UPDATE whatsapp_messages SET status = ?, ${column} = ?, error_code = COALESCE(?, error_code), error_message = COALESCE(?, error_message) WHERE merchant_id = ? AND wa_message_id = ?`,
+            [status, nowIso(), st.errors?.[0]?.code != null ? String(st.errors[0].code) : null, st.errors?.[0]?.message ?? null, merchantId, st.id],
           );
-          const msg = await get<{ id: string; order_id: string | null }>("SELECT id, order_id FROM whatsapp_messages WHERE merchant_id = ? AND wa_message_id = ?", [merchantId, st.id]);
+          const msg = await get<{ id: string; order_id: string | null; customer_id: string | null }>(
+            "SELECT id, order_id, customer_id FROM whatsapp_messages WHERE merchant_id = ? AND wa_message_id = ?",
+            [merchantId, st.id],
+          );
           if (msg?.order_id) await run("UPDATE orders SET whatsapp_status = ? WHERE id = ?", [status, msg.order_id]);
+          // Preuves officielles de présence sur WhatsApp : un accusé de
+          // réception vaut bien mieux que toute supposition. L'échec 131026
+          // (« non distribuable », numéro probablement non inscrit) ne prime
+          // JAMAIS sur une preuve de livraison.
+          if (msg?.customer_id) {
+            if (status === "delivered" || status === "read") {
+              await run(
+                "UPDATE customers SET whatsapp_status = 'available', whatsapp_checked_at = ?, whatsapp_check_source = 'delivery_receipt' WHERE id = ? AND merchant_id = ? AND whatsapp_status != 'available'",
+                [nowIso(), msg.customer_id, merchantId],
+              );
+            } else if (status === "failed" && st.errors?.some((e) => Number(e.code) === 131026)) {
+              await run(
+                "UPDATE customers SET whatsapp_status = 'unavailable', whatsapp_checked_at = ?, whatsapp_check_source = 'delivery_failure' WHERE id = ? AND merchant_id = ? AND whatsapp_status = 'unknown'",
+                [nowIso(), msg.customer_id, merchantId],
+              );
+            }
+          }
           if (status === "failed") {
             await notify({
               merchantId,

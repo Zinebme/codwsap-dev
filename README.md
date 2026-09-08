@@ -43,7 +43,16 @@ Aucun processus worker permanent n'est requis.
 ```bash
 npm run verify           # types + lint + build
 npm run test:isolation   # 37 tests d'isolation et de sécurité, PostgreSQL réel
+npm run test:auth        # 24 tests d'authentification et de liaison d'identités
+npm run test:delivery    # 24 tests du catalogue et des moteurs de livraison (hors ligne)
+npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, retrait)
+npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
+npm run test:whatsapp    # 22 tests WhatsApp (variables de template, preuves de disponibilité, alertes)
+npm run test:sheets      # 28 tests du chemin de données Google Sheets / CSV (hors ligne)
+npm run test:telegram    # 17 tests des alertes Telegram (fetch substitué, hors ligne)
 ```
+
+→ Audit final (vérifié vs bloqué sur identifiants) : [`docs/GAP_AUDIT.md`](docs/GAP_AUDIT.md)
 
 ## Variables d'environnement
 
@@ -89,6 +98,12 @@ scripts/                seed, migrations, worker, tests d'isolation
 - Le tenant est **toujours** résolu côté serveur (`requireTenant` / `requirePermission`) ;
   aucun `merchant_id` provenant du client n'est jamais utilisé.
 - Rôles : Owner, Admin, Agent (l'agent n'accède ni aux intégrations ni à la facturation).
+- Invitations d'équipe par **lien à usage unique** (7 jours) : le jeton n'est stocké
+  que haché (SHA-256), aucun fournisseur email n'est requis — l'invitant transmet le
+  lien lui-même. Un compte existant ne peut être rejoint qu'après preuve d'identité
+  (mot de passe du compte ou session déjà ouverte) : un invitant malveillant ne peut
+  jamais prendre le contrôle d'un compte. Limites de plan appliquées à la création
+  **et** à l'acceptation, chaque action auditée.
 - Webhooks signés (HMAC-SHA256), idempotence, journalisation et vues d'échec.
 - Rate limiting sur l'authentification, la création de commandes, les synchronisations et les webhooks.
 - Messages d'erreur en français, sans stack trace ; les erreurs techniques sont centralisées pour le super admin.

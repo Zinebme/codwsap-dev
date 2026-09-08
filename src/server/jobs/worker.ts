@@ -1,12 +1,22 @@
 import "server-only";
 import { all, get, run, nowIso } from "@/server/db";
 import { claimJobs, completeJob, failJob, enqueueJob, type Job } from "@/server/jobs/queue";
-import { deliverQueuedMessage, markMessageFailed } from "@/server/services/messaging";
+import { deliverQueuedMessage, markMessageFailed, refreshAvailabilityEvidence } from "@/server/services/messaging";
 import { refreshTracking } from "@/server/services/delivery";
 import { runNoResponseReminder } from "@/server/services/automations";
 import { syncGoogleSheet, safeJson } from "@/server/connectors/orders";
-import { decryptSecret } from "@/server/crypto";
-import { apiLog } from "@/server/services/audit";
+import { sendTelegramAlert } from "@/server/services/telegram";
+import { notify } from "@/server/services/notifications";
+
+/** Libellés non techniques des traitements de fond, pour les alertes marchand. */
+const JOB_TITLES: Record<string, string> = {
+  send_whatsapp: "Message WhatsApp non envoyé",
+  poll_delivery: "Synchronisation du suivi colis",
+  sync_sheet: "Synchronisation Google Sheets",
+  reminder: "Rappel client",
+  notify_telegram: "Notification Telegram",
+  wa_availability_check: "Vérification des numéros WhatsApp",
+};
 
 async function handle(job: Job): Promise<void> {
   const payload = safeJson<Record<string, string>>(job.payload) ?? {};
@@ -40,28 +50,35 @@ async function handle(job: Job): Promise<void> {
     case "sync_sheet": {
       const res = await syncGoogleSheet(job.merchant_id!, payload.integrationId);
       if (!res.ok) throw new Error(res.error);
+      // Synchro planifiée : le marchand n'a pas demandé la synchronisation,
+      // il ne voit son résultat que si on le lui annonce.
+      if (res.created > 0 || res.invalid > 0) {
+        await notify({
+          merchantId: job.merchant_id!,
+          type: "sheets_sync",
+          severity: res.invalid > 0 ? "warning" : "success",
+          title: "Google Sheets synchronisé",
+          body: `${res.created} nouvelle(s) commande(s), ${res.duplicates} déjà importée(s)${res.invalid ? `, ${res.invalid} ligne(s) invalide(s)` : ""}.`,
+          link: "/dashboard/orders",
+        });
+      }
       return;
     }
     case "reminder": {
       await runNoResponseReminder(payload.orderId);
       return;
     }
+    case "wa_availability_check": {
+      // Rapprochement fondé sur les preuves de livraison (aucune API
+      // d'interrogation de numéros n'existe côté Meta : on ne devine jamais).
+      await refreshAvailabilityEvidence(job.merchant_id!);
+      return;
+    }
     case "notify_telegram": {
-      const integ = await get<{ credentials_encrypted: string | null }>(
-        "SELECT credentials_encrypted FROM integrations WHERE merchant_id = ? AND kind = 'telegram' AND status = 'connected' LIMIT 1",
-        [job.merchant_id],
-      );
-      const creds = decryptSecret<{ bot_token?: string; chat_id?: string }>(integ?.credentials_encrypted);
-      if (!creds?.bot_token || !creds.chat_id) return;
-      const text = `*${payload.title}*\n${payload.body ?? ""}`;
-      const res = await fetch(`https://api.telegram.org/bot${creds.bot_token}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: creds.chat_id, text, parse_mode: "Markdown" }),
-        signal: AbortSignal.timeout(10000),
-      });
-      await apiLog({ merchantId: job.merchant_id, service: "telegram", operation: "sendMessage", ok: res.ok, statusCode: res.status });
-      if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
+      const res = await sendTelegramAlert(job.merchant_id!, payload.title, payload.body);
+      // « non configuré » n'est pas un échec : le marchand a déconnecté
+      // Telegram, la notification dashboard reste la seule voie.
+      if (!res.ok && res.configured) throw new Error(res.error);
       return;
     }
     default:
@@ -84,6 +101,18 @@ export async function runWorker(limit = 20): Promise<{ processed: number; failed
         if (job.type === "send_whatsapp") {
           const payload = safeJson<{ messageId: string }>(job.payload);
           if (payload?.messageId) await markMessageFailed(payload.messageId, (e as Error).message);
+        }
+        // « 3 tentatives puis alerte » : le marchand est prévenu, le super
+        // admin voit le détail dans la console d'observabilité.
+        if (job.merchant_id) {
+          await notify({
+            merchantId: job.merchant_id,
+            type: "job_failed",
+            severity: "error",
+            title: JOB_TITLES[job.type] ?? "Traitement de fond en échec",
+            body: (e as Error).message.slice(0, 160),
+            link: "/dashboard/notifications",
+          });
         }
       }
     }

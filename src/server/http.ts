@@ -23,6 +23,18 @@ export function ok<T>(data: T, init?: ResponseInit) {
   return NextResponse.json(data as Record<string, unknown>, init);
 }
 
+/**
+ * Origin of the incoming request, proxy-aware (Vercel rewrites Host into
+ * x-forwarded-host / x-forwarded-proto). Used to build links handed back to
+ * the user, e.g. team invitation links.
+ */
+export function originFromRequest(req: Request): string {
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (!host) return new URL(req.url).origin;
+  const proto = req.headers.get("x-forwarded-proto") ?? (/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(host) ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 export async function parseBody<T>(req: Request, schema: ZodSchema<T>): Promise<T> {
   let body: unknown;
   try {

@@ -88,6 +88,28 @@ CREATE TABLE IF NOT EXISTS merchant_users (
 CREATE INDEX IF NOT EXISTS idx_merchant_users_user ON merchant_users(user_id);
 CREATE INDEX IF NOT EXISTS idx_merchant_users_merchant ON merchant_users(merchant_id, role);
 
+-- Invitations d'équipe par lien à usage unique. Le propriétaire/admin génère
+-- un lien qu'il transmet à l'invité (email, WhatsApp...) ; l'invité définit
+-- lui-même son mot de passe. Le jeton brut n'est JAMAIS stocké : seul son
+-- condensat SHA-256 l'est, comme pour un mot de passe — lire la base ne
+-- permet donc pas d'accepter une invitation.
+CREATE TABLE IF NOT EXISTS team_invitations (
+  id TEXT PRIMARY KEY,
+  merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  full_name TEXT,
+  role TEXT NOT NULL DEFAULT 'agent', -- admin | agent
+  token_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | accepted | revoked
+  invited_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  accepted_at TEXT,
+  accepted_user_id TEXT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_team_invitations_merchant ON team_invitations(merchant_id, status);
+CREATE INDEX IF NOT EXISTS idx_team_invitations_email ON team_invitations(email);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
   id TEXT PRIMARY KEY,
   merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
@@ -316,6 +338,9 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
   kind TEXT NOT NULL DEFAULT 'text', -- text | template | button_reply | system
   template_id TEXT,
   template_name TEXT,
+  -- Valeurs ordonnées des variables du template (JSON), telles qu'exigées par
+  -- l'API Cloud Meta : les paramètres du composant « body » sont positionnels.
+  template_variables TEXT,
   body TEXT,
   payload TEXT,
   status TEXT NOT NULL DEFAULT 'queued', -- queued | sent | delivered | read | failed | rejected | received

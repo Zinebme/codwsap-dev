@@ -17,7 +17,12 @@
     "verify": "npm run typecheck && npm run lint && npm run build",
     "admin:create": "tsx --conditions=react-server scripts/create-admin.ts",
     "test:delivery": "tsx --conditions=react-server scripts/test-delivery-connectors.ts",
-    "test:auth": "tsx --conditions=react-server scripts/test-auth.ts"
+    "test:auth": "tsx --conditions=react-server scripts/test-auth.ts",
+    "test:team": "tsx --conditions=react-server scripts/test-team.ts",
+    "test:admin-ops": "tsx --conditions=react-server scripts/test-admin-ops.ts",
+    "test:whatsapp": "tsx --conditions=react-server scripts/test-whatsapp.ts",
+    "test:sheets": "tsx --conditions=react-server scripts/test-sheets.ts",
+    "test:telegram": "tsx --conditions=react-server scripts/test-telegram.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

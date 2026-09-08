@@ -111,6 +111,57 @@ function splitLine(line: string, delim: string): string[] {
 }
 
 /**
+ * Charge les lignes d'une feuille Google. Deux chemins d'accès, identiques
+ * pour la synchronisation et la détection d'en-têtes :
+ *   - API Sheets v4 avec clé API stockée chiffrée côté serveur ;
+ *   - export CSV public quand la feuille est partagée par lien.
+ */
+async function fetchSheetRows(
+  settings: { spreadsheet_id?: string; sheet_name?: string; gid?: string },
+  creds: { api_key?: string },
+): Promise<ParsedRow[]> {
+  if (!settings.spreadsheet_id) throw new Error("Aucune feuille configurée.");
+  if (creds.api_key) {
+    const range = encodeURIComponent(settings.sheet_name || "Sheet1");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${settings.spreadsheet_id}/values/${range}?key=${creds.api_key}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as { values?: string[][] };
+    const values = json.values ?? [];
+    if (values.length <= 1) return [];
+    const headers = values[0];
+    return values.slice(1).map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""])));
+  }
+  const gid = settings.gid ?? "0";
+  const url = `https://docs.google.com/spreadsheets/d/${settings.spreadsheet_id}/export?format=csv&gid=${gid}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return parseCsv(await res.text());
+}
+
+/**
+ * Détecte les en-têtes de la feuille du marchand pour préremplir la
+ * correspondance de colonnes. Mêmes chemins d'accès (et mêmes identifiants)
+ * que la synchronisation — aucun envoi, aucune écriture.
+ */
+export async function fetchSheetHeaders(merchantId: string): Promise<{ ok: true; headers: string[] } | { ok: false; error: string }> {
+  const integ = await get<{ settings: string | null; credentials_encrypted: string | null }>(
+    "SELECT settings, credentials_encrypted FROM integrations WHERE merchant_id = ? AND kind = 'google_sheets'",
+    [merchantId],
+  );
+  if (!integ) return { ok: false, error: "Aucune feuille Google connectée." };
+  const settings = safeJson<{ spreadsheet_id?: string; sheet_name?: string; gid?: string }>(integ.settings) ?? {};
+  const creds = decryptSecret<{ api_key?: string }>(integ.credentials_encrypted) ?? {};
+  try {
+    const rows = await fetchSheetRows(settings, creds);
+    if (!rows.length) return { ok: false, error: "La feuille est vide ou l'onglet est introuvable." };
+    return { ok: true, headers: Object.keys(rows[0]) };
+  } catch (e) {
+    return { ok: false, error: `Lecture impossible : ${(e as Error).message}` };
+  }
+}
+
+/**
  * Google Sheets sync. Uses the published CSV export endpoint when the sheet is
  * shared by link, or the Sheets REST API with a server-stored API key. Google
  * credentials are stored encrypted server-side and never sent to the browser.
@@ -129,24 +180,7 @@ export async function syncGoogleSheet(merchantId: string, integrationId: string)
   const started = Date.now();
   let rows: ParsedRow[] = [];
   try {
-    if (creds.api_key) {
-      const range = encodeURIComponent(settings.sheet_name || "Sheet1");
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${settings.spreadsheet_id}/values/${range}?key=${creds.api_key}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { values?: string[][] };
-      const values = json.values ?? [];
-      if (values.length > 1) {
-        const headers = values[0];
-        rows = values.slice(1).map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""])));
-      }
-    } else {
-      const gid = settings.gid ?? "0";
-      const url = `https://docs.google.com/spreadsheets/d/${settings.spreadsheet_id}/export?format=csv&gid=${gid}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      rows = parseCsv(await res.text());
-    }
+    rows = await fetchSheetRows(settings, creds);
   } catch (e) {
     const error = `Synchronisation impossible : ${(e as Error).message}`;
     await run("UPDATE integrations SET status = 'error', last_error = ?, last_error_at = ? WHERE id = ?", [error, nowIso(), integrationId]);

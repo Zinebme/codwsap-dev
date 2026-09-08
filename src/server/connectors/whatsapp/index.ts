@@ -41,6 +41,22 @@ export interface WhatsappProvider {
   checkAvailability(to: string): Promise<AvailabilityResult>;
 }
 
+/**
+ * Composant « template » exigé par l'API Cloud Meta. Les paramètres du corps
+ * sont POSITIONNELS : ils remplissent {{1}}, {{2}}… dans l'ordre. Sans valeurs,
+ * on n'envoie aucun composant (Meta refuse des paramètres vides).
+ * Fonction pure : testable hors ligne, sans appel réseau.
+ */
+export function templateComponent(templateName: string, language: string, variables: string[]) {
+  return {
+    name: templateName,
+    language: { code: language },
+    components: variables.length
+      ? [{ type: "body", parameters: variables.map((v) => ({ type: "text", text: v })) }]
+      : [],
+  };
+}
+
 class MetaCloudProvider implements WhatsappProvider {
   readonly name = "meta_cloud";
   constructor(private conn: WhatsappConnection, private token: string) {}
@@ -98,13 +114,7 @@ class MetaCloudProvider implements WhatsappProvider {
       {
         to,
         type: "template",
-        template: {
-          name: templateName,
-          language: { code: language },
-          components: variables.length
-            ? [{ type: "body", parameters: variables.map((v) => ({ type: "text", text: v })) }]
-            : [],
-        },
+        template: templateComponent(templateName, language, variables),
       },
       "send_template",
     );

@@ -1,9 +1,8 @@
 import "server-only";
 import { get, run, uid, nowIso } from "@/server/db";
 import type { AutomationType, DeliveryStatus } from "@/lib/domain";
-import { AUTOMATION_META } from "@/lib/domain";
-import { formatDzd } from "@/lib/domain";
-import { queueMessage, isCustomerRelevantDeliveryStatus } from "@/server/services/messaging";
+import { AUTOMATION_META, formatDzd } from "@/lib/domain";
+import { queueMessage, isCustomerRelevantDeliveryStatus, orderVariables } from "@/server/services/messaging";
 import { notify } from "@/server/services/notifications";
 import { enqueueJob, toSql } from "@/server/jobs/queue";
 
@@ -58,20 +57,6 @@ type OrderRow = {
   is_test: number;
   status: string;
 };
-
-function orderVariables(order: OrderRow): Record<string, string> {
-  return {
-    "1": order.customer_name ?? "client",
-    "2": order.reference,
-    "3": formatDzd(order.total),
-    customer_name: order.customer_name ?? "client",
-    order_ref: order.reference,
-    total: formatDzd(order.total),
-    tracking: order.tracking_number ?? "",
-    wilaya: order.wilaya ?? "",
-    commune: order.commune ?? "",
-  };
-}
 
 async function logRun(merchantId: string, automationId: string | null, orderId: string | null, trigger: string, result: string, reason?: string) {
   await run("INSERT INTO automation_runs (id, merchant_id, automation_id, order_id, trigger, result, reason) VALUES (?,?,?,?,?,?,?)", [

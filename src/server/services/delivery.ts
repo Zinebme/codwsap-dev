@@ -157,6 +157,53 @@ export async function applyDeliveryEvent(params: {
   return { applied: true };
 }
 
+/** Parse minimal d'un webhook sans moteur dédié (champs génériques). */
+function genericParseWebhook(payload: unknown, normalize?: (raw: string) => DeliveryStatus) {
+  const b = payload as { tracking?: string; tracking_number?: string; status?: string; date?: string };
+  const tracking = b?.tracking ?? b?.tracking_number;
+  if (!tracking || !b.status || !normalize) return [];
+  return [{ trackingNumber: String(tracking), rawStatus: String(b.status), normalizedStatus: normalize(String(b.status)), occurredAt: b.date }];
+}
+
+/**
+ * Applique la charge utile d'un webhook transporteur aux commandes correspondantes.
+ *
+ * Partagé entre la route webhook (réception) et le rejeu super admin : la
+ * déduplication par idempotencyKey rend tout double traitement inoffensif.
+ */
+export async function applyDeliveryWebhookPayload(
+  connection: { id: string; merchant_id: string; provider: string },
+  payload: unknown,
+): Promise<{ applied: number }> {
+  const connector = await connectorForConnection(connection.id, connection.merchant_id);
+  // NB : `connector.normalizeStatus` doit rester LIÉE au connecteur (this.mapping) :
+  // la détacher (connector?.normalizeStatus) faisait planter la normalisation
+  // pour les connecteurs sans parseWebhook dédié (sandbox, générique).
+  const events =
+    connector?.parseWebhook?.(payload) ??
+    (connector ? genericParseWebhook(payload, (raw) => connector.normalizeStatus(raw)) : []);
+  let applied = 0;
+  for (const ev of events) {
+    const order = await get<{ id: string }>(
+      "SELECT id FROM orders WHERE merchant_id = ? AND tracking_number = ?",
+      [connection.merchant_id, ev.trackingNumber],
+    );
+    if (!order) continue;
+    const res = await applyDeliveryEvent({
+      merchantId: connection.merchant_id,
+      orderId: order.id,
+      provider: connection.provider,
+      rawStatus: ev.rawStatus,
+      normalizedStatus: ev.normalizedStatus,
+      occurredAt: ev.occurredAt,
+      idempotencyKey: `${ev.trackingNumber}:${ev.rawStatus}:${(ev.occurredAt ?? "").slice(0, 16)}`,
+      raw: payload,
+    });
+    if (res.applied) applied++;
+  }
+  return { applied };
+}
+
 export async function connectionHealth(merchantId: string) {
   const rows = await all<{ id: string; provider: string; label: string; status: string; last_sync_at: string | null; last_error: string | null }>(
     "SELECT id, provider, label, status, last_sync_at, last_error FROM delivery_connections WHERE merchant_id = ?",

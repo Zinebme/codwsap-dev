@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { MessageCircle, Truck, Table2, Send, Webhook, RefreshCw, Copy, AlertTriangle, Activity } from "lucide-react";
+import { MessageCircle, Truck, Table2, Send, Webhook, RefreshCw, Copy, AlertTriangle, Activity, Search } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
@@ -213,6 +213,27 @@ function SheetsModal({ open, integration, ar, onClose, onSaved }: { open: boolea
   const { push } = useToast();
   const settings = (integration?.settings ?? {}) as { spreadsheet_id?: string; sheet_name?: string; gid?: string; mapping?: Record<string, string>; auto_sync?: boolean };
   const [busy, setBusy] = React.useState(false);
+  const [detecting, setDetecting] = React.useState(false);
+  const [headers, setHeaders] = React.useState<string[]>([]);
+
+  async function detectHeaders(e: React.MouseEvent) {
+    e.preventDefault();
+    setDetecting(true);
+    try {
+      const res = await fetch("/api/integrations/google/headers", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        push({ variant: "error", title: json.error ?? "Détection impossible" });
+        return;
+      }
+      setHeaders(json.headers ?? []);
+      push({ variant: "success", title: `${json.headers.length} colonnes détectées`, description: json.headers.slice(0, 6).join(" · ") });
+    } catch {
+      push({ variant: "error", title: ar ? "تعذر الاتصال" : "Serveur injoignable" });
+    } finally {
+      setDetecting(false);
+    }
+  }
 
   return (
     <Modal
@@ -273,12 +294,25 @@ function SheetsModal({ open, integration, ar, onClose, onSaved }: { open: boolea
           <Input name="apiKey" type="password" dir="ltr" />
         </Field>
         <div>
-          <p className="mb-2 text-[12px] font-semibold text-ink-700">{ar ? "ربط الأعمدة" : "Correspondance des colonnes"}</p>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[12px] font-semibold text-ink-700">{ar ? "ربط الأعمدة" : "Correspondance des colonnes"}</p>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-[11.5px]" loading={detecting} onClick={detectHeaders}>
+              <Search className="h-3 w-3" /> {ar ? "كشف الأعمدة" : "Détecter les colonnes"}
+            </Button>
+          </div>
+          {!!headers.length && (
+            <p className="mb-2 text-[11px] text-ink-400">
+              {ar ? "الأعمدة المكتشفة تظهر كاقتراحات في كل حقل." : "Colonnes détectées — elles apparaissent en suggestions dans chaque champ."}
+            </p>
+          )}
+          <datalist id="gs-headers">
+            {headers.map((h) => <option key={h} value={h} />)}
+          </datalist>
           <div className="grid gap-2 sm:grid-cols-2">
             {MAPPABLE_FIELDS.map((field) => (
               <label key={field.key} className="flex items-center gap-2">
                 <span className="w-40 shrink-0 text-[12px] text-ink-600">{field.label}{field.required ? " *" : ""}</span>
-                <Input name={`m_${field.key}`} className="h-8 text-[12.5px]" required={field.required} defaultValue={settings.mapping?.[field.key] ?? ""} placeholder={ar ? "اسم العمود" : "En-tête de colonne"} />
+                <Input name={`m_${field.key}`} className="h-8 text-[12.5px]" required={field.required} defaultValue={settings.mapping?.[field.key] ?? ""} placeholder={ar ? "اسم العمود" : "En-tête de colonne"} list="gs-headers" />
               </label>
             ))}
           </div>

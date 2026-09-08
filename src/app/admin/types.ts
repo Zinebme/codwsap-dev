@@ -19,6 +19,8 @@ export type Health = {
   providerRequests: { id: string; provider_name: string; contact: string | null; details: string | null; created_at: string; merchant_name: string | null }[];
   audits: { id: string; action: string; actor_label: string | null; resource: string | null; ip: string | null; created_at: string; merchant_name: string | null }[];
   plans: Plan[];
+  jobQueue: { id: string; type: string; status: string; attempts: number; max_attempts: number; run_after: string; updated_at: string; last_error: string | null; merchant_id: string | null; merchant_name: string | null }[];
+  trend: { day: string; calls: number; failures: number }[];
 };
 
 export type Plan = {

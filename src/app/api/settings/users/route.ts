@@ -4,6 +4,7 @@ import { jsonError, ok, parseBody } from "@/server/http";
 import { get, run, uid } from "@/server/db";
 import { audit } from "@/server/services/audit";
 import { randomToken } from "@/server/crypto";
+import { removeMember } from "@/server/services/team";
 
 const createSchema = z.object({
   fullName: z.string().min(2).max(80),
@@ -59,6 +60,25 @@ export async function PATCH(req: Request) {
     if (member.role === "owner") throw new HttpError(403, "Le propriétaire ne peut pas être modifié.", "forbidden");
     await run("UPDATE merchant_users SET role = COALESCE(?, role), status = COALESCE(?, status) WHERE id = ?", [body.role ?? null, body.status ?? null, body.membershipId]);
     await audit({ merchantId: ctx.merchantId, actorId: ctx.user.id, actorLabel: ctx.user.email, action: "user.updated", resource: "user", resourceId: body.membershipId, ip: await clientIp() });
+    return ok({ ok: true });
+  } catch (e) {
+    return jsonError(e);
+  }
+}
+
+/** Retire un membre de l'équipe (son compte utilisateur et son historique sont conservés). */
+export async function DELETE(req: Request) {
+  try {
+    const ctx = await requirePermission("users.write");
+    const membershipId = new URL(req.url).searchParams.get("membershipId");
+    if (!membershipId) throw new HttpError(400, "Identifiant de membre manquant.", "bad_request");
+    await removeMember({
+      merchantId: ctx.merchantId,
+      membershipId,
+      actorId: ctx.user.id,
+      actorLabel: ctx.user.email,
+      ip: await clientIp(),
+    });
     return ok({ ok: true });
   } catch (e) {
     return jsonError(e);
