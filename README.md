@@ -48,6 +48,7 @@ npm run test:delivery    # 24 tests du catalogue et des moteurs de livraison (ho
 npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, retrait)
 npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
 npm run test:whatsapp    # 22 tests WhatsApp (variables de template, preuves de disponibilité, alertes)
+npm run test:sheets      # 28 tests du chemin de données Google Sheets / CSV (hors ligne)
 ```
 
 ## Variables d'environnement

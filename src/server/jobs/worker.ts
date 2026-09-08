@@ -51,6 +51,18 @@ async function handle(job: Job): Promise<void> {
     case "sync_sheet": {
       const res = await syncGoogleSheet(job.merchant_id!, payload.integrationId);
       if (!res.ok) throw new Error(res.error);
+      // Synchro planifiée : le marchand n'a pas demandé la synchronisation,
+      // il ne voit son résultat que si on le lui annonce.
+      if (res.created > 0 || res.invalid > 0) {
+        await notify({
+          merchantId: job.merchant_id!,
+          type: "sheets_sync",
+          severity: res.invalid > 0 ? "warning" : "success",
+          title: "Google Sheets synchronisé",
+          body: `${res.created} nouvelle(s) commande(s), ${res.duplicates} déjà importée(s)${res.invalid ? `, ${res.invalid} ligne(s) invalide(s)` : ""}.`,
+          link: "/dashboard/orders",
+        });
+      }
       return;
     }
     case "reminder": {

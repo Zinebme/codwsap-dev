@@ -20,7 +20,8 @@
     "test:auth": "tsx --conditions=react-server scripts/test-auth.ts",
     "test:team": "tsx --conditions=react-server scripts/test-team.ts",
     "test:admin-ops": "tsx --conditions=react-server scripts/test-admin-ops.ts",
-    "test:whatsapp": "tsx --conditions=react-server scripts/test-whatsapp.ts"
+    "test:whatsapp": "tsx --conditions=react-server scripts/test-whatsapp.ts",
+    "test:sheets": "tsx --conditions=react-server scripts/test-sheets.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
