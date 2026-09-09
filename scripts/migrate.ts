@@ -88,10 +88,13 @@ async function main() {
       process.stdout.write(`  + ${file} ... `);
       try {
         await client.query("BEGIN");
-        await client.query(sql);
+        const result = await client.query(sql);
         await client.query("INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)", [file, checksum]);
         await client.query("COMMIT");
         console.log("ok");
+        if (file === "0007_reclassify_template_groups.sql") {
+          console.log(`    Existing templates reclassified: ${result.rowCount ?? 0}`);
+        }
         count++;
       } catch (e) {
         await client.query("ROLLBACK");

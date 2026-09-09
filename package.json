@@ -25,7 +25,8 @@
     "test:automations": "tsx --conditions=react-server scripts/test-automations.ts",
     "test:satisfaction": "tsx --conditions=react-server scripts/test-satisfaction.ts",
     "test:sheets": "tsx --conditions=react-server scripts/test-sheets.ts",
-    "test:telegram": "tsx --conditions=react-server scripts/test-telegram.ts"
+    "test:telegram": "tsx --conditions=react-server scripts/test-telegram.ts",
+    "templates:backfill": "tsx --conditions=react-server scripts/backfill-templates.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

@@ -445,6 +445,58 @@ async function main() {
   );
   record("Refus d'automatisation journalisé (traçabilité)", run5?.result === "suppressed" && run5?.reason === "template_not_approved");
 
+  console.log("── Regression: migration 0007, insert-only backfill, combined filters ──");
+  const { readFileSync } = await import("node:fs");
+  const { pool } = await import("../src/server/db");
+  const { TEMPLATE_SEEDS } = await import("../src/server/services/seedTemplates");
+  const { listTemplates } = await import("../src/server/services/templateFilters");
+  const repairMerchant = "mch_tpl_repair";
+  await merchant(repairMerchant, "Legacy merchant", "tpl-repair");
+  // Existing merchant has all fifteen FR variants, including edited/Meta rows.
+  for (const seed of TEMPLATE_SEEDS.filter((t) => t.language === "fr")) {
+    await tplRow(repairMerchant, seed.name, "fr", `Merchant edited: ${seed.body}`, {
+      status: seed.name === "order_confirmed" ? "approved" : seed.name === "order_preparing" ? "pending" : seed.name === "order_delivered" ? "rejected" : "draft", event: seed.event,
+    });
+  }
+  await run("UPDATE whatsapp_templates SET meta_template_id = 'meta-preserve', quality = 'preserve quality' WHERE merchant_id = ? AND name = 'order_confirmed'", [repairMerchant]);
+  const beforeRepair = await all("SELECT * FROM whatsapp_templates WHERE merchant_id = ? ORDER BY id", [repairMerchant]);
+  const migration = readFileSync("supabase/migrations/0007_reclassify_template_groups.sql", "utf8");
+  await (await pool()).query(migration);
+  const repaired = await all("SELECT * FROM whatsapp_templates WHERE merchant_id = ? ORDER BY id", [repairMerchant]);
+  for (const [name, group] of Object.entries({ order_shipped: "tracking", parcel_at_office: "tracking", delivery_failed: "return", satisfaction_request: "satisfaction", order_confirmation_request: "confirmation", order_confirmed: "confirmation" })) {
+    const row = repaired.find((r) => r.name === name);
+    record(`0007: legacy ${name} -> ${group}`, row?.template_group === group && row?.group_key === group);
+  }
+  const withoutGroups = (rows: typeof repaired) => rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => !["template_group", "group_key"].includes(key))));
+  record("0007 preserves all non-group fields", JSON.stringify(withoutGroups(beforeRepair)) === JSON.stringify(withoutGroups(repaired)));
+  const repeatedMigration = await (await pool()).query(migration);
+  record("0007 repeated repair changes zero rows", repeatedMigration.rowCount === 0);
+  const backfill = await seedTemplates(repairMerchant);
+  record("Backfill adds 15 missing AR rows", backfill.languages.ar === 15);
+  record("Backfill adds 15 missing EN rows", backfill.languages.en === 15);
+  record("Backfill does not duplicate FR", backfill.languages.fr === 0 && backfill.existed === 15 && backfill.created === 30);
+  const afterBackfill = await all("SELECT * FROM whatsapp_templates WHERE merchant_id = ? AND language = 'fr' ORDER BY id", [repairMerchant]);
+  record("Approved template entirely untouched", JSON.stringify(repaired.find((r) => r.status === "approved")) === JSON.stringify(afterBackfill.find((r) => r.status === "approved")));
+  record("Pending/rejected templates entirely untouched", JSON.stringify(repaired.filter((r) => ["pending", "rejected"].includes(String(r.status)))) === JSON.stringify(afterBackfill.filter((r) => ["pending", "rejected"].includes(String(r.status)))));
+  record("Edited drafts entirely untouched", JSON.stringify(repaired.filter((r) => r.status === "draft")) === JSON.stringify(afterBackfill.filter((r) => r.status === "draft")));
+  const twice = await seedTemplates(repairMerchant);
+  record("Backfill twice is idempotent", twice.created === 0 && twice.existed === 45);
+  const filterCases: [string, string, number][] = [
+    ["group", "group=tracking", 15],
+    ["Arabic", "language=ar", 15],
+    ["French", "language=fr", 15],
+    ["English", "language=en", 15],
+    ["status", "status=approved", 1],
+    ["combined group+language+status", "group=return&language=fr&status=draft", 3],
+    ["tracking Arabic", "group=tracking&language=ar", 5],
+    ["empty combination", "group=satisfaction&language=en&status=approved", 0],
+  ];
+  for (const [label, query, expected] of filterCases) {
+    const params = new URLSearchParams(query);
+    const rows = await listTemplates(repairMerchant, params);
+    record(`Filter: ${label}`, rows.length === expected && rows.every((row) => row.merchant_id === repairMerchant && [...params].every(([key, value]) => row[key === "group" ? "template_group" : key] === value)));
+  }
+
   /* ================================================================== */
   const passed = results.filter((r) => r.ok).length;
   console.log("\n══════════════════════════════════════════════════════════");

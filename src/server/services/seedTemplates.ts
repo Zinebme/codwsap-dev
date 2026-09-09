@@ -1,5 +1,5 @@
 import "server-only";
-import { run, uid } from "@/server/db";
+import { all, uid, tx } from "@/server/db";
 import type { AutomationType, TemplateGroup } from "@/lib/domain";
 
 export type Seed = {
@@ -218,29 +218,32 @@ export const TEMPLATE_SEEDS: Seed[] = DEFINITIONS.flatMap((definition) =>
 );
 
 export async function seedTemplates(merchantId: string) {
-  for (const template of TEMPLATE_SEEDS) {
-    await run(
-      `INSERT OR IGNORE INTO whatsapp_templates
-        (id, merchant_id, name, category, language, status, body, variables, event_key, template_group, group_key)
-       VALUES (?,?,?,?,?, 'draft', ?, ?, ?, ?, ?)`,
-      [
-        uid("tpl"),
-        merchantId,
-        template.name,
-        template.category,
-        template.language,
-        template.body,
-        JSON.stringify(template.variables),
-        template.event,
-        template.group,
-        template.group,
-      ],
-    );
-    // Backfill the group on templates seeded by an older deployment while
-    // preserving their status and Meta metadata.
-    await run(
-      "UPDATE whatsapp_templates SET template_group = ?, group_key = ? WHERE merchant_id = ? AND name = ? AND language = ?",
-      [template.group, template.group, merchantId, template.name, template.language],
-    );
-  }
+  return tx(async () => {
+    const counts = { created: 0, existed: 0, languages: { fr: 0, ar: 0, en: 0 } };
+    for (const template of TEMPLATE_SEEDS) {
+      const inserted = await all(
+        `INSERT INTO whatsapp_templates
+          (id, merchant_id, name, category, language, status, body, variables, event_key, template_group, group_key)
+         VALUES (?,?,?,?,?, 'draft', ?, ?, ?, ?, ?)
+         ON CONFLICT (merchant_id, name, language) DO NOTHING RETURNING id`,
+        [
+          uid("tpl"),
+          merchantId,
+          template.name,
+          template.category,
+          template.language,
+          template.body,
+          JSON.stringify(template.variables),
+          template.event,
+          template.group,
+          template.group,
+        ],
+      );
+      if (inserted.length) {
+        counts.created++;
+        counts.languages[template.language]++;
+      } else counts.existed++;
+    }
+    return counts;
+  });
 }
