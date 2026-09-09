@@ -55,6 +55,7 @@ async function main() {
   );
   const { templateComponent, renderTemplate, safeConnectionPayload } = await import("../src/server/connectors/whatsapp");
   const { encryptSecret, decryptSecret, maskSecret } = await import("../src/server/crypto");
+  const { parseSatisfactionScore, recordSatisfactionScore, satisfactionSummary } = await import("../src/server/services/satisfaction");
 
   console.log("── Composant template pour l'API Cloud Meta ───────────────");
 
@@ -83,7 +84,7 @@ async function main() {
   console.log("\n── File d'attente : variables stockées sur le message ──────");
 
   await run(
-    "TRUNCATE users, merchants, merchant_users, customers, orders, whatsapp_connections, whatsapp_conversations, whatsapp_messages, whatsapp_templates, jobs, notifications, automations, automation_runs RESTART IDENTITY CASCADE",
+    "TRUNCATE users, merchants, merchant_users, customers, orders, whatsapp_connections, whatsapp_conversations, whatsapp_messages, whatsapp_templates, satisfaction_scores, jobs, notifications, automations, automation_runs RESTART IDENTITY CASCADE",
     [],
   );
   const merchantId = "mch_wa_test";
@@ -332,6 +333,20 @@ async function main() {
   record("Réglages : pas de crash sans identifiants ni avec un blob corrompu",
     safeConnectionPayload(rowConnexion, decryptSecret("v1.corrompu.corrompu.corrompu") ?? undefined).access_token_masked === null &&
       safeConnectionPayload(rowConnexion, undefined).access_token_masked === null);
+
+  console.log("\n── Groupes et satisfaction ─────────────────────────────────");
+  const groupColumns = await get<{ template_group: string; group_key: string }>("SELECT template_group, group_key FROM whatsapp_templates WHERE id = ?", [tplId]);
+  record("Le template WhatsApp porte son groupe métier", groupColumns?.template_group === "confirmation" && groupColumns.group_key === "confirmation");
+  record("Les scores de satisfaction sont bornés à 1–5", parseSatisfactionScore("1") === 1 && parseSatisfactionScore("5") === 5 && parseSatisfactionScore("6") === null);
+  record("Une note arabe peut être interprétée", parseSatisfactionScore("٥") === 5);
+  await run("UPDATE orders SET status = 'delivered' WHERE id = ?", [orderId]);
+  const satisfaction = await recordSatisfactionScore({ merchantId: merchantId, customerId, orderId, score: 4, source: "whatsapp" });
+  record("Une note WhatsApp est persistée", satisfaction?.score === 4 && satisfaction?.order_id === orderId);
+  record("La note est dénormalisée sur la commande", (await get<{ satisfaction_score: number }>("SELECT satisfaction_score FROM orders WHERE id = ?", [orderId]))?.satisfaction_score === 4);
+  const satisfactionKpi = await satisfactionSummary(merchantId);
+  record("Les analytics WhatsApp comptent les avis", satisfactionKpi.responses === 1 && satisfactionKpi.average === 4);
+  record("Les filtres de score sont appliqués", (await satisfactionSummary(merchantId, { minScore: 5 })).responses === 0);
+  record("La source de l'avis est conservée", (await get<{ source: string }>("SELECT source FROM satisfaction_scores WHERE order_id = ?", [orderId]))?.source === "whatsapp");
 
   console.log("\n── Résultat ────────────────────────────────────────────────");
   const passed = results.filter((r) => r.ok).length;

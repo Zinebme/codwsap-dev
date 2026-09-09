@@ -41,6 +41,7 @@ function OrdersInner() {
   const [debouncedQ, setDebouncedQ] = React.useState(q);
   const [status, setStatus] = React.useState<string[]>(sp.get("status")?.split(",").filter(Boolean) ?? []);
   const [wa, setWa] = React.useState(sp.get("wa") ?? "");
+  const [satisfaction, setSatisfaction] = React.useState(sp.get("satisfaction") ?? "");
   const [provider, setProvider] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
@@ -67,6 +68,7 @@ function OrdersInner() {
   if (debouncedQ) params.set("q", debouncedQ);
   if (status.length) params.set("status", status.join(","));
   if (wa) params.set("wa", wa);
+  if (satisfaction) params.set("satisfaction", satisfaction);
   if (provider) params.set("provider", provider);
   if (from) params.set("from", from);
   if (to) params.set("to", to);
@@ -106,7 +108,7 @@ function OrdersInner() {
           <>
             <Button size="sm" onClick={() => setShowFilters((v) => !v)}>
               <Filter className="h-3.5 w-3.5" /> {ar ? "فلاتر" : "Filtres"}
-              {(status.length > 0 || wa || from || attention) && <span className="ms-1 h-1.5 w-1.5 rounded-full bg-brand-500" />}
+              {(status.length > 0 || wa || satisfaction || from || attention) && <span className="ms-1 h-1.5 w-1.5 rounded-full bg-brand-500" />}
             </Button>
             <a href={`/api/orders/export?${params.toString()}`}>
               <Button size="sm">
@@ -172,6 +174,14 @@ function OrdersInner() {
                   ))}
                 </Select>
               </Field>
+              <Field label={ar ? "الرضا" : "Satisfaction"}>
+                <Select value={satisfaction} onChange={(e) => setSatisfaction(e.target.value)}>
+                  <option value="">{ar ? "الكل" : "Tous"}</option>
+                  <option value="rated">{ar ? "مقيّمة" : "Évaluées"}</option>
+                  <option value="unrated">{ar ? "غير مقيّمة" : "Non évaluées"}</option>
+                  {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}/5</option>)}
+                </Select>
+              </Field>
               <Field label={ar ? "الناقل" : "Transporteur"}>
                 <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
                   <option value="">{ar ? "الكل" : "Tous"}</option>
@@ -201,6 +211,7 @@ function OrdersInner() {
               onClick={() => {
                 setStatus([]);
                 setWa("");
+                setSatisfaction("");
                 setProvider("");
                 setFrom("");
                 setTo("");

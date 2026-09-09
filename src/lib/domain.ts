@@ -35,6 +35,38 @@ export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 export const WHATSAPP_AVAILABILITY = ["available", "unavailable", "unknown", "check_failed"] as const;
 export type WhatsappAvailability = (typeof WHATSAPP_AVAILABILITY)[number];
 
+/** Business groups shared by the starter template library and automations. */
+export const TEMPLATE_GROUPS = ["confirmation", "tracking", "return", "satisfaction"] as const;
+export type TemplateGroup = (typeof TEMPLATE_GROUPS)[number];
+export type AutomationGroup = TemplateGroup;
+
+export const TEMPLATE_GROUP_META: Record<TemplateGroup, { fr: string; ar: string; description_fr: string; description_ar: string }> = {
+  confirmation: {
+    fr: "Confirmation",
+    ar: "التأكيد",
+    description_fr: "Confirmer, reporter ou annuler une commande.",
+    description_ar: "تأكيد الطلب أو تأجيله أو إلغاؤه.",
+  },
+  tracking: {
+    fr: "Suivi",
+    ar: "التتبع",
+    description_fr: "Informer le client des étapes utiles de la livraison.",
+    description_ar: "إعلام الزبون بالمراحل المهمة للتوصيل.",
+  },
+  return: {
+    fr: "Retour",
+    ar: "المرتجع",
+    description_fr: "Prévenir et suivre les colis en échec ou retournés.",
+    description_ar: "إعلام الزبون بالطرود الفاشلة أو المرتجعة.",
+  },
+  satisfaction: {
+    fr: "Satisfaction",
+    ar: "الرضا",
+    description_fr: "Demander puis recueillir l'avis après la livraison.",
+    description_ar: "طلب وجمع رأي الزبون بعد التوصيل.",
+  },
+};
+
 export const MESSAGE_STATUSES = ["queued", "sent", "delivered", "read", "failed", "rejected", "received"] as const;
 
 export type Tone = "green" | "red" | "orange" | "amber" | "blue" | "gray" | "violet" | "teal";
@@ -158,6 +190,18 @@ export const AUTOMATION_META: Record<AutomationType, { fr: string; ar: string; d
     desc_fr: "Crée une alerte interne, aucun message client.",
     desc_ar: "ينشئ تنبيها داخليا دون رسالة للزبون.",
   },
+};
+
+export const AUTOMATION_GROUP: Record<AutomationType, AutomationGroup> = {
+  new_order_confirmation: "confirmation",
+  reply_yes_confirm: "confirmation",
+  reply_no_cancel: "confirmation",
+  shipped_notice: "tracking",
+  at_office_notice: "tracking",
+  out_for_delivery_notice: "tracking",
+  delivered_thanks: "satisfaction",
+  no_response_reminder: "tracking",
+  failed_message_alert: "tracking",
 };
 
 export const ROLES = ["owner", "admin", "agent"] as const;
