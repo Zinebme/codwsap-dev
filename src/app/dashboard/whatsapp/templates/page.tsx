@@ -18,12 +18,18 @@ export default function TemplatesPage() {
   const f = useFormat();
   const ar = locale === "ar";
   const { push } = useToast();
-  const { data, isLoading, mutate } = useSWR<{ rows: Tpl[] }>("/api/whatsapp/templates", fetcher);
   const [editing, setEditing] = React.useState<Tpl | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [translating, setTranslating] = React.useState<Tpl | null>(null);
   const [groupFilter, setGroupFilter] = React.useState<TemplateGroup | "">("");
-  const visibleRows = data?.rows.filter((template) => !groupFilter || String(template.template_group ?? template.group_key ?? "") === groupFilter) ?? [];
+  const [languageFilter, setLanguageFilter] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("");
+  const query = new URLSearchParams();
+  if (groupFilter) query.set("group", groupFilter);
+  if (languageFilter) query.set("language", languageFilter);
+  if (statusFilter) query.set("status", statusFilter);
+  const { data, isLoading, mutate } = useSWR<{ rows: Tpl[] }>(`/api/whatsapp/templates?${query}`, fetcher);
+  const visibleRows = data?.rows ?? [];
 
   async function save(body: Record<string, unknown>, id?: string) {
     const res = await fetch(id ? `/api/whatsapp/templates/${id}` : "/api/whatsapp/templates", {
@@ -61,6 +67,22 @@ export default function TemplatesPage() {
             {ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}
           </button>
         ))}
+      </Card>
+
+      <Card className="flex flex-wrap gap-1.5 p-2.5" role="group" aria-label="Toutes les langues">
+        <button aria-pressed={languageFilter === ""} onClick={() => setLanguageFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Toutes les langues </button>
+        <button aria-pressed={languageFilter === "ar"} onClick={() => setLanguageFilter("ar")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "ar" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> العربية </button>
+        <button aria-pressed={languageFilter === "fr"} onClick={() => setLanguageFilter("fr")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "fr" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Français </button>
+        <button aria-pressed={languageFilter === "en"} onClick={() => setLanguageFilter("en")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "en" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> English </button>
+      </Card>
+
+      <Card className="flex flex-wrap gap-1.5 p-2.5" role="group" aria-label="Tous les statuts">
+        <button aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Tous les statuts </button>
+        <button aria-pressed={statusFilter === "draft"} onClick={() => setStatusFilter("draft")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "draft" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Draft </button>
+        <button aria-pressed={statusFilter === "pending"} onClick={() => setStatusFilter("pending")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "pending" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Pending </button>
+        <button aria-pressed={statusFilter === "approved"} onClick={() => setStatusFilter("approved")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "approved" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Approved </button>
+        <button aria-pressed={statusFilter === "rejected"} onClick={() => setStatusFilter("rejected")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "rejected" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Rejected </button>
+        <button aria-pressed={statusFilter === "paused"} onClick={() => setStatusFilter("paused")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "paused" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Paused </button>
       </Card>
 
       {isLoading ? (

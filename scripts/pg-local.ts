@@ -12,8 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 
-const DATA_DIR = path.join(process.cwd(), ".pg-local", "data");
-const STATE = path.join(process.cwd(), ".pg-local", "state.json");
+const DATA_DIR = process.env.PG_LOCAL_DATA_DIR ?? path.join(process.cwd(), ".pg-local", "data");
+const STATE = process.env.PG_LOCAL_STATE_FILE ?? path.join(process.cwd(), ".pg-local", "state.json");
 const PORT = Number(process.env.PG_LOCAL_PORT ?? 55432);
 const DB = process.env.PG_LOCAL_DB ?? "codwsap";
 const USER = "postgres";
@@ -33,6 +33,10 @@ export async function startLocalPg(): Promise<{ url: string; stop: () => Promise
     password: PASSWORD,
     port: PORT,
     persistent: true,
+    // CI/workspace containers commonly run as root, while PostgreSQL refuses
+    // to start as root. Let embedded-postgres create its unprivileged runtime
+    // user only in that environment; regular local development is unchanged.
+    createPostgresUser: typeof process.getuid === "function" && process.getuid() === 0,
     onLog: () => {},
     onError: () => {},
   });

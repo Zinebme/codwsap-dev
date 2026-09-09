@@ -1,17 +1,18 @@
+import { listTemplates } from "@/server/services/templateFilters";
 import { z } from "zod";
 import { requirePermission, requireTenant, clientIp, HttpError } from "@/server/auth/session";
 import { jsonError, ok, parseBody } from "@/server/http";
-import { all, get, run, uid, nowIso } from "@/server/db";
+import { get, run, uid, nowIso } from "@/server/db";
 import { extractTemplateVariables } from "@/server/connectors/whatsapp";
 import { audit } from "@/server/services/audit";
 import { TEMPLATE_GROUPS } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const ctx = await requireTenant();
-    return ok({ rows: await all("SELECT * FROM whatsapp_templates WHERE merchant_id = ? ORDER BY updated_at DESC", [ctx.merchantId]) });
+    return ok({ rows: await listTemplates(ctx.merchantId, new URL(req.url).searchParams) });
   } catch (e) {
     return jsonError(e);
   }
