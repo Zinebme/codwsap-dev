@@ -1,5 +1,5 @@
 import "server-only";
-import { decryptSecret } from "@/server/crypto";
+import { decryptSecret, maskSecret } from "@/server/crypto";
 import { apiLog } from "@/server/services/audit";
 import { get } from "@/server/db";
 
@@ -39,6 +39,47 @@ export interface WhatsappProvider {
    * provides one we must return "unknown" rather than inventing a result.
    */
   checkAvailability(to: string): Promise<AvailabilityResult>;
+}
+
+/**
+ * Lignes de la table whatsapp_connections. Le payload renvoyé au navigateur
+ * (safeConnectionPayload) projette EXPLICITEMENT les champs sûrs : le secret
+ * de signature du webhook (webhook_secret) et le blob chiffré
+ * (credentials_encrypted) ne quittent jamais le serveur, et le jeton
+ * d'accès n'apparaît que masqué.
+ */
+export type ConnectionRow = {
+  id: string;
+  merchant_id: string;
+  display_phone: string | null;
+  phone_number_id: string | null;
+  business_account_id: string | null;
+  status: string;
+  quality_rating: string | null;
+  webhook_verify_token: string | null;
+  last_webhook_at: string | null;
+  last_message_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+};
+
+/** Fonction pure : testable hors ligne, sans appel réseau. */
+export function safeConnectionPayload(conn: ConnectionRow, accessToken: string | null | undefined) {
+  return {
+    id: conn.id,
+    display_phone: conn.display_phone,
+    phone_number_id: conn.phone_number_id,
+    business_account_id: conn.business_account_id,
+    status: conn.status,
+    quality_rating: conn.quality_rating,
+    webhook_verify_token: conn.webhook_verify_token,
+    access_token_masked: maskSecret(accessToken),
+    last_webhook_at: conn.last_webhook_at,
+    last_message_at: conn.last_message_at,
+    last_error: conn.last_error,
+    last_error_at: conn.last_error_at,
+    webhook_url: `/api/webhooks/whatsapp/${conn.merchant_id}`,
+  };
 }
 
 /**
@@ -161,3 +202,4 @@ export async function getWhatsappProvider(merchantId: string): Promise<{ provide
 export function renderTemplate(body: string, vars: Record<string, string>): string {
   return body.replace(/\{\{\s*([\w\d_]+)\s*\}\}/g, (_m, key: string) => vars[key] ?? vars[`v${key}`] ?? "");
 }
+

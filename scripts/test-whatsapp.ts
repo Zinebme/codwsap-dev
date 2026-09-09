@@ -19,7 +19,10 @@
  *       . échec 131026 sans aucune livraison -> « unavailable » ;
  *       . une preuve de livraison PRIME toujours sur un échec ;
  *       . sans preuve, le statut reste « unknown » (rien n'est inventé) ;
- *   - le rapprochement ne fuit pas d'un marchand à l'autre.
+ *   - le rapprochement ne fuit pas d'un marchand à l'autre ;
+ *   - la page « Réglages WhatsApp » ne crash pas (identifiants absents ou
+ *     corrompus) et sa réponse ne fuit ni le secret de webhook, ni le jeton
+ *     d'accès en clair (masquage uniquement).
  *
  * CE QUI N'EST PAS TESTÉ ICI : le dialogue réel avec l'API Cloud Meta
  * (graph.facebook.com), qui exige des identifiants et un numéro WhatsApp
@@ -50,7 +53,8 @@ async function main() {
   const { queueMessage, deliverQueuedMessage, refreshAvailabilityEvidence, orderedTemplateValues, orderVariables } = await import(
     "../src/server/services/messaging"
   );
-  const { templateComponent, renderTemplate } = await import("../src/server/connectors/whatsapp");
+  const { templateComponent, renderTemplate, safeConnectionPayload } = await import("../src/server/connectors/whatsapp");
+  const { encryptSecret, decryptSecret, maskSecret } = await import("../src/server/crypto");
 
   console.log("── Composant template pour l'API Cloud Meta ───────────────");
 
@@ -294,6 +298,40 @@ async function main() {
   );
   record("Interrupteur respecté : aucune alerte quand désactivée", notifCountAfter === notifCountBefore);
   record("Échec journalisé comme « skipped » (traçabilité)", skippedRun?.result === "skipped" && skippedRun?.reason === "automation_disabled");
+
+  console.log("\n── Réglages WhatsApp : pas de crash, pas de fuite ───────────");
+  // Le payload de la page Réglages est une projection explicite : même si la
+  // ligne porte des secrets, ils ne doivent jamais apparaître dans la réponse.
+  const tokenConnexion = "EAAGtest-token-reglages-0123456789";
+  const rowConnexion: Record<string, unknown> & Parameters<typeof safeConnectionPayload>[0] = {
+    id: "wac_reglages",
+    merchant_id: merchantId,
+    display_phone: "+213555000111",
+    phone_number_id: "pnid_reglages",
+    business_account_id: "baid_reglages",
+    status: "connected",
+    quality_rating: null,
+    webhook_verify_token: "vt_reglages",
+    last_webhook_at: null,
+    last_message_at: null,
+    last_error: null,
+    last_error_at: null,
+    // Champs SENSIBLES portés par la ligne (doivent disparaître du payload) :
+    credentials_encrypted: encryptSecret({ access_token: tokenConnexion }),
+    webhook_secret: "whsec-reglages-ne-jamais-fuir",
+    meta_metrics: JSON.stringify({ interne: true }),
+  };
+  const payloadReglages = safeConnectionPayload(rowConnexion, decryptSecret<{ access_token?: string }>(rowConnexion.credentials_encrypted as string)?.access_token);
+  const payloadJson = JSON.stringify(payloadReglages);
+  record("Réglages : le secret de webhook ne figure jamais dans le payload",
+    !payloadJson.includes("whsec-reglages-ne-jamais-fuir") && !("webhook_secret" in payloadReglages));
+  record("Réglages : le blob chiffré et les métriques internes ne figurent jamais dans le payload",
+    !("credentials_encrypted" in payloadReglages) && !("meta_metrics" in payloadReglages));
+  record("Réglages : le jeton d'accès n'apparaît que masqué",
+    payloadReglages.access_token_masked === maskSecret(tokenConnexion) && !payloadJson.includes(tokenConnexion));
+  record("Réglages : pas de crash sans identifiants ni avec un blob corrompu",
+    safeConnectionPayload(rowConnexion, decryptSecret("v1.corrompu.corrompu.corrompu") ?? undefined).access_token_masked === null &&
+      safeConnectionPayload(rowConnexion, undefined).access_token_masked === null);
 
   console.log("\n── Résultat ────────────────────────────────────────────────");
   const passed = results.filter((r) => r.ok).length;
