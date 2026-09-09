@@ -42,12 +42,15 @@ Aucun processus worker permanent n'est requis.
 
 ```bash
 npm run verify           # types + lint + build
-npm run test:isolation   # 37 tests d'isolation et de sécurité, PostgreSQL réel
+npm run test:isolation   # 42 tests d'isolation et de sécurité, PostgreSQL réel
 npm run test:auth        # 24 tests d'authentification et de liaison d'identités
 npm run test:delivery    # 24 tests du catalogue et des moteurs de livraison (hors ligne)
 npm run test:team        # 44 tests de gestion d'équipe (invitations, rôles, retrait)
 npm run test:admin-ops   # 19 tests des opérations super admin (file de jobs, rejeu de webhooks)
-npm run test:whatsapp    # 22 tests WhatsApp (variables de template, preuves de disponibilité, alertes)
+npm run test:whatsapp    # 34 tests WhatsApp (variables, preuves, groupes, satisfaction, alertes)
+npm run test:templates   # 81 tests des templates AR/FR/EN et de leurs groupes
+npm run test:automations # 60 tests des automatisations regroupées et de leurs garde-fous
+npm run test:satisfaction # 26 tests des notes 1–5, filtres et analytics
 npm run test:sheets      # 28 tests du chemin de données Google Sheets / CSV (hors ligne)
 npm run test:telegram    # 17 tests des alertes Telegram (fetch substitué, hors ligne)
 ```

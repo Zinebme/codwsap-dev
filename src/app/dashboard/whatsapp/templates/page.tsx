@@ -7,7 +7,7 @@ import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
 import { Card, Button, Badge, Modal, Field, Input, Select, Textarea, useToast, EmptyState, Skeleton, Dropdown, DropdownItem } from "@/components/ui";
-import { AUTOMATION_TYPES, AUTOMATION_META, type AutomationType } from "@/lib/domain";
+import { AUTOMATION_TYPES, AUTOMATION_META, TEMPLATE_GROUPS, TEMPLATE_GROUP_META, type AutomationType, type TemplateGroup } from "@/lib/domain";
 
 type Tpl = Record<string, string | null>;
 
@@ -22,6 +22,8 @@ export default function TemplatesPage() {
   const [editing, setEditing] = React.useState<Tpl | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [translating, setTranslating] = React.useState<Tpl | null>(null);
+  const [groupFilter, setGroupFilter] = React.useState<TemplateGroup | "">("");
+  const visibleRows = data?.rows.filter((template) => !groupFilter || String(template.template_group ?? template.group_key ?? "") === groupFilter) ?? [];
 
   async function save(body: Record<string, unknown>, id?: string) {
     const res = await fetch(id ? `/api/whatsapp/templates/${id}` : "/api/whatsapp/templates", {
@@ -50,13 +52,24 @@ export default function TemplatesPage() {
         }
       />
 
+      <Card className="flex flex-wrap gap-1.5 p-2.5">
+        <button onClick={() => setGroupFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${!groupFilter ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
+          {ar ? "الكل" : "Tous"}
+        </button>
+        {TEMPLATE_GROUPS.map((group) => (
+          <button key={group} onClick={() => setGroupFilter(group)} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${groupFilter === group ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
+            {ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}
+          </button>
+        ))}
+      </Card>
+
       {isLoading ? (
         <div className="grid gap-3 md:grid-cols-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-[14px]" />)}</div>
-      ) : !data?.rows.length ? (
+      ) : !visibleRows.length ? (
         <Card><EmptyState icon={FileText} title={ar ? "لا توجد قوالب" : "Aucun template"} /></Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {data.rows.map((t) => (
+          {visibleRows.map((t) => (
             <Card key={String(t.id)} className="flex flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -64,6 +77,7 @@ export default function TemplatesPage() {
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     <Badge tone={STATUS_TONE[String(t.status)] ?? "gray"} dot>{String(t.status)}</Badge>
                     <Badge tone={t.category === "marketing" ? "violet" : "blue"}>{String(t.category)}</Badge>
+                    <Badge tone="teal">{ar ? TEMPLATE_GROUP_META[String(t.template_group ?? t.group_key ?? "confirmation") as TemplateGroup]?.ar : TEMPLATE_GROUP_META[String(t.template_group ?? t.group_key ?? "confirmation") as TemplateGroup]?.fr}</Badge>
                     <Badge tone="gray">{String(t.language).toUpperCase()}</Badge>
                   </div>
                 </div>
@@ -106,6 +120,7 @@ export default function TemplatesPage() {
                 name: String(translating.name),
                 body: String(translating.body ?? ""),
                 language: String(translating.language) === "fr" ? "ar" : "fr",
+                templateGroup: String(translating.template_group ?? translating.group_key ?? "confirmation"),
               }
             : undefined
         }
@@ -128,7 +143,7 @@ function TemplateModal({
   open: boolean;
   template: Tpl | null;
   /** Création pré-remplie (ex. « Autre langue » : même nom, corps à traduire). */
-  prefill?: { name?: string; body?: string; language?: string };
+  prefill?: { name?: string; body?: string; language?: string; templateGroup?: string };
   ar: boolean;
   onClose: () => void;
   onSave: (b: Record<string, unknown>, id?: string) => void;
@@ -164,6 +179,7 @@ function TemplateModal({
             body,
             category: fd.get("category"),
             eventKey: fd.get("eventKey") || null,
+            templateGroup: fd.get("templateGroup") || "confirmation",
             status: fd.get("status"),
           };
           if (!template) {
@@ -198,6 +214,11 @@ function TemplateModal({
               <option value="utility">Utility</option>
               <option value="marketing">Marketing</option>
               <option value="authentication">Authentication</option>
+            </Select>
+          </Field>
+          <Field label={ar ? "المجموعة" : "Groupe métier"}>
+            <Select name="templateGroup" defaultValue={String(template?.template_group ?? template?.group_key ?? prefill?.templateGroup ?? "confirmation")}>
+              {TEMPLATE_GROUPS.map((group) => <option key={group} value={group}>{ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}</option>)}
             </Select>
           </Field>
           {template && (

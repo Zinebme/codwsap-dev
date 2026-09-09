@@ -4,11 +4,13 @@ import { jsonError, ok, parseBody } from "@/server/http";
 import { get, run, nowIso } from "@/server/db";
 import { extractTemplateVariables } from "@/server/connectors/whatsapp";
 import { audit } from "@/server/services/audit";
+import { TEMPLATE_GROUPS } from "@/lib/domain";
 
 const schema = z.object({
   body: z.string().min(5).max(1024).optional(),
   category: z.enum(["utility", "marketing", "authentication"]).optional(),
   eventKey: z.string().max(60).nullable().optional(),
+  templateGroup: z.enum(TEMPLATE_GROUPS).optional(),
   /** Merchants mirror the Meta review outcome here; the platform never fabricates it. */
   status: z.enum(["draft", "pending", "approved", "rejected", "paused"]).optional(),
 });
@@ -25,8 +27,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const variables = body.body ? JSON.stringify(extractTemplateVariables(body.body)) : null;
     await run(
       `UPDATE whatsapp_templates SET body = COALESCE(?, body), category = COALESCE(?, category), event_key = ?,
+        template_group = COALESCE(?, template_group), group_key = COALESCE(?, group_key),
         status = COALESCE(?, status), variables = COALESCE(?, variables), updated_at = ? WHERE id = ? AND merchant_id = ?`,
-      [body.body ?? null, body.category ?? null, body.eventKey ?? null, body.status ?? null, variables, nowIso(), id, ctx.merchantId],
+      [
+        body.body ?? null,
+        body.category ?? null,
+        body.eventKey ?? null,
+        body.templateGroup ?? null,
+        body.templateGroup ?? null,
+        body.status ?? null,
+        variables,
+        nowIso(),
+        id,
+        ctx.merchantId,
+      ],
     );
     await audit({ merchantId: ctx.merchantId, actorId: ctx.user.id, actorLabel: ctx.user.email, action: "template.updated", resource: "template", resourceId: id, ip: await clientIp() });
     return ok({ ok: true });
