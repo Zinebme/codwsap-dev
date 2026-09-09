@@ -6,6 +6,7 @@ import { onCustomerReply } from "@/server/services/automations";
 import { notify } from "@/server/services/notifications";
 import { upsertCustomer } from "@/server/services/orders";
 import { decryptSecret } from "@/server/crypto";
+import { captureSatisfactionReply } from "@/server/services/satisfaction";
 
 export const dynamic = "force-dynamic";
 
@@ -87,10 +88,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ merchan
           const conversationId = await ensureConversation(merchantId, phone, customerId, order?.id);
           const text = msg.text?.body ?? msg.button?.text ?? msg.interactive?.button_reply?.title ?? "";
 
+          const inboundMessageId = uid("msg");
           await run(
             `INSERT INTO whatsapp_messages (id, merchant_id, conversation_id, order_id, customer_id, direction, kind, body, status, wa_message_id)
              VALUES (?,?,?,?,?, 'inbound', ?, ?, 'received', ?)`,
-            [uid("msg"), merchantId, conversationId, order?.id ?? null, customerId, msg.button || msg.interactive ? "button_reply" : "text", text, msg.id],
+            [inboundMessageId, merchantId, conversationId, order?.id ?? null, customerId, msg.button || msg.interactive ? "button_reply" : "text", text, msg.id],
           );
           await run("UPDATE whatsapp_conversations SET last_message_at = ?, last_inbound_at = ?, last_message_preview = ?, unread_count = unread_count + 1 WHERE id = ?", [
             nowIso(),
@@ -104,7 +106,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ merchan
             await run("UPDATE customers SET opt_out_status = 1, opt_out_date = ? WHERE id = ?", [nowIso(), customerId]);
             await run("INSERT INTO customer_consents (id, merchant_id, customer_id, channel, action, source) VALUES (?,?,?, 'whatsapp', 'opt_out', 'keyword')", [uid("cns"), merchantId, customerId]);
           } else {
-            await onCustomerReply(order?.id ?? null, merchantId, classifyReply(text));
+            const satisfaction = await captureSatisfactionReply({
+              merchantId,
+              customerId,
+              orderId: order?.id ?? null,
+              conversationId,
+              messageId: inboundMessageId,
+              text,
+            });
+            if (!satisfaction) await onCustomerReply(order?.id ?? null, merchantId, classifyReply(text));
           }
 
           await notify({

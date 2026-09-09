@@ -1,5 +1,6 @@
 import "server-only";
 import { all, get } from "@/server/db";
+import { satisfactionSummary, satisfactionByDay, type SatisfactionFilters } from "@/server/services/satisfaction";
 
 export type Range = { from: string; to: string };
 
@@ -16,7 +17,7 @@ function pct(part: number, total: number) {
   return total > 0 ? Math.round((part / total) * 1000) / 10 : 0;
 }
 
-export async function merchantKpis(merchantId: string, range: Range) {
+export async function merchantKpis(merchantId: string, range: Range, satisfactionFilters: SatisfactionFilters = range) {
   const params = [merchantId, range.from, `${range.to} 23:59:59`];
   const o = await get<{
     total: number;
@@ -68,6 +69,7 @@ export async function merchantKpis(merchantId: string, range: Range) {
     "SELECT COUNT(*) AS c FROM automation_runs WHERE merchant_id = ? AND result = 'suppressed' AND reason = 'duplicate' AND created_at >= ? AND created_at <= ?",
     params,
   ))?.c ?? 0;
+  const satisfaction = await satisfactionSummary(merchantId, satisfactionFilters);
 
   const orders = o?.total ?? 0;
   const outbound = (m?.sent ?? 0) + (m?.failed ?? 0);
@@ -99,6 +101,17 @@ export async function merchantKpis(merchantId: string, range: Range) {
     messagesPerOrder: orders ? Math.round(((m?.sent ?? 0) / orders) * 10) / 10 : 0,
     suppressed,
     duplicatesPrevented,
+    satisfactionAverage: satisfaction.average,
+    satisfactionResponses: satisfaction.responses,
+    satisfactionPositiveRate: satisfaction.positiveRate,
+    satisfactionLow: satisfaction.low,
+  };
+}
+
+export async function satisfactionAnalytics(merchantId: string, filters: SatisfactionFilters = {}) {
+  return {
+    summary: await satisfactionSummary(merchantId, filters),
+    byDay: await satisfactionByDay(merchantId, filters),
   };
 }
 

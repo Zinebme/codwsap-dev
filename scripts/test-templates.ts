@@ -7,7 +7,7 @@
  * réelles. Aucun réseau : la livraison s'appuie sur le bac à sable.
  *
  * CE QUI EST TESTÉ (hors ligne) :
- *   - la bibliothèque de départ : 11 templates, tous « draft » (l'approbation
+ *   - la bibliothèque de départ : 45 templates AR/FR/EN, tous « draft » (l'approbation
  *     Meta n'est jamais inventée), noms valides et variables cohérentes avec
  *     les placeholders du corps ;
  *   - le couple (nom, langue) est la clé métier : un même nom peut exister en
@@ -54,10 +54,10 @@ async function main() {
   const { queueMessage, deliverQueuedMessage, evaluateGuards, customerLanguage } = await import("../src/server/services/messaging");
   const { seedTemplates } = await import("../src/server/services/seedTemplates");
   const { seedAutomations, resolveEventTemplate, onNewOrder, onDeliveryStatusChange } = await import("../src/server/services/automations");
-  const { formatDzd, AUTOMATION_TYPES } = await import("../src/lib/domain");
+  const { formatDzd, AUTOMATION_TYPES, TEMPLATE_GROUPS } = await import("../src/lib/domain");
 
   await run(
-    "TRUNCATE users, merchants, merchant_users, customers, orders, whatsapp_connections, whatsapp_conversations, whatsapp_messages, whatsapp_templates, jobs, notifications, automations, automation_runs, usage_records, order_events, api_logs RESTART IDENTITY CASCADE",
+    "TRUNCATE users, merchants, merchant_users, customers, orders, whatsapp_connections, whatsapp_conversations, whatsapp_messages, whatsapp_templates, satisfaction_scores, jobs, notifications, automations, automation_runs, usage_records, order_events, api_logs RESTART IDENTITY CASCADE",
     [],
   );
 
@@ -131,12 +131,15 @@ async function main() {
     "SELECT id, name, language, status, body, variables, event_key FROM whatsapp_templates WHERE merchant_id = ?",
     [M1],
   );
-  record("Seed : les 11 templates de départ sont créés", seeds.length === 11, `${seeds.length} template(s)`);
-  record("Seed : tous en français (langue de repli de la plateforme)", seeds.every((s) => s.language === "fr"));
+  record("Seed : les 45 templates de départ sont créés", seeds.length === 45, `${seeds.length} template(s)`);
+  record(
+    "Seed : chaque template existe en français, arabe et anglais",
+    ["fr", "ar", "en"].every((language) => seeds.filter((s) => s.language === language).length === 15),
+  );
   record("Seed : tous « draft » — l'approbation Meta n'est jamais inventée", seeds.every((s) => s.status === "draft"));
   record(
-    "Seed : noms valides (minuscules/chiffres/underscores) et uniques",
-    seeds.every((s) => /^[a-z0-9_]+$/.test(s.name)) && new Set(seeds.map((s) => s.name)).size === 11,
+    "Seed : noms valides (minuscules/chiffres/underscores) et uniques par langue",
+    seeds.every((s) => /^[a-z0-9_]+$/.test(s.name)) && new Set(seeds.map((s) => `${s.name}:${s.language}`)).size === 45,
   );
   record(
     "Seed : le nombre de variables déclarées = le nombre de placeholders du corps (tous)",
@@ -145,7 +148,7 @@ async function main() {
   const seedEvents = seeds.map((s) => s.event_key).filter((e): e is string => !!e);
   record(
     "Seed : les clés d'évènement sont valides et sans doublon",
-    seedEvents.length === 6 && new Set(seedEvents).size === 6 && seedEvents.every((e) => (AUTOMATION_TYPES as readonly string[]).includes(e)),
+    seedEvents.length === 18 && new Set(seedEvents).size === 6 && seedEvents.every((e) => (AUTOMATION_TYPES as readonly string[]).includes(e)),
     `${seedEvents.length} évènement(s)`,
   );
   record(
@@ -154,44 +157,70 @@ async function main() {
   );
   await seedTemplates(M1);
   const seedsAfter = Number((await get<{ c: number }>("SELECT COUNT(*) AS c FROM whatsapp_templates WHERE merchant_id = ?", [M1]))?.c);
-  record("Seed : re-exécuter le seed ne duplique rien", seedsAfter === 11, `${seedsAfter} template(s)`);
+  record("Seed : re-exécuter le seed ne duplique rien", seedsAfter === 45, `${seedsAfter} template(s)`);
+
+  const groupedSeeds = await all<{ template_group: string; language: string; c: number }>(
+    "SELECT template_group, language, COUNT(*) AS c FROM whatsapp_templates WHERE merchant_id = ? GROUP BY template_group, language",
+    [M1],
+  );
+  const groupedCount = (group: string, language: string) => Number(groupedSeeds.find((row) => row.template_group === group && row.language === language)?.c ?? 0);
+  record("Groupe Confirmation présent dans les trois langues", TEMPLATE_GROUPS.includes("confirmation") && groupedCount("confirmation", "fr") === 4 && groupedCount("confirmation", "ar") === 4 && groupedCount("confirmation", "en") === 4);
+  record("Groupe Tracking présent dans les trois langues", groupedCount("tracking", "fr") === 5 && groupedCount("tracking", "ar") === 5 && groupedCount("tracking", "en") === 5);
+  record("Groupe Return présent dans les trois langues", groupedCount("return", "fr") === 3 && groupedCount("return", "ar") === 3 && groupedCount("return", "en") === 3);
+  record("Groupe Satisfaction présent dans les trois langues", groupedCount("satisfaction", "fr") === 3 && groupedCount("satisfaction", "ar") === 3 && groupedCount("satisfaction", "en") === 3);
+  record("Chaque variante garde le même groupe métier", groupedSeeds.length === 12);
+  record("La confirmation appartient au groupe Confirmation", seeds.find((s) => s.name === "order_confirmation_request" && s.language === "fr")?.event_key === "new_order_confirmation" && (await get<{ template_group: string }>("SELECT template_group FROM whatsapp_templates WHERE merchant_id = ? AND name = ? AND language = 'fr'", [M1, "order_confirmation_request"]))?.template_group === "confirmation");
+  record("Le suivi expédié appartient au groupe Tracking", (await get<{ template_group: string }>("SELECT template_group FROM whatsapp_templates WHERE merchant_id = ? AND name = ? AND language = 'fr'", [M1, "order_shipped"]))?.template_group === "tracking");
+  record("Le colis retourné appartient au groupe Return", (await get<{ template_group: string }>("SELECT template_group FROM whatsapp_templates WHERE merchant_id = ? AND name = ? AND language = 'fr'", [M1, "order_returned"]))?.template_group === "return");
+  record("La demande d'avis appartient au groupe Satisfaction", (await get<{ template_group: string }>("SELECT template_group FROM whatsapp_templates WHERE merchant_id = ? AND name = ? AND language = 'fr'", [M1, "satisfaction_request"]))?.template_group === "satisfaction");
+  record("Les noms restent identiques entre les langues", new Set(seeds.filter((s) => s.language === "fr").map((s) => s.name)).size === new Set(seeds.filter((s) => s.language === "ar").map((s) => s.name)).size && new Set(seeds.filter((s) => s.language === "fr").map((s) => s.name)).size === 15);
+  record("Les modèles anglais sont bien persistés", seeds.filter((s) => s.language === "en").every((s) => s.body.length > 5));
+  record("Les modèles arabes sont bien persistés", seeds.filter((s) => s.language === "ar").every((s) => /[\\u0600-\\u06FF]/.test(s.body)));
+  record("Les variables restent cohérentes sur les 45 modèles", seeds.every((s) => extractTemplateVariables(s.body).length === (s.variables ? JSON.parse(s.variables).length : 0)));
+  record("Aucune clé de groupe hors catalogue", groupedSeeds.every((row) => (TEMPLATE_GROUPS as readonly string[]).includes(row.template_group)));
+  record("La somme des groupes vaut 45 par langue", ["fr", "ar", "en"].every((language) => groupedSeeds.filter((row) => row.language === language).reduce((sum, row) => sum + Number(row.c), 0) === 15));
+  record("Le seed reste déterministe après lecture groupée", (await get<{ c: number }>("SELECT COUNT(*) AS c FROM whatsapp_templates WHERE merchant_id = ?", [M1]))?.c === 45);
+  record("Les quatre groupes sont non vides", TEMPLATE_GROUPS.every((group) => groupedSeeds.some((row) => row.template_group === group && Number(row.c) > 0)));
 
   /* ================================================================== */
   console.log("\n── B. Multilingue : (nom, langue) est la clé métier ────────");
   const AR_BODY_B = "مرحباً {{1}}، طلبك {{2}} جاهز. شكراً لك.";
   let arInsertOk = true;
   try {
-    await tplRow(M1, "order_confirmed", "ar", AR_BODY_B, { status: "approved" });
+    await tplRow(M1, "custom_order_confirmed", "ar", AR_BODY_B, { status: "approved" });
   } catch {
     arInsertOk = false;
   }
   record("Même nom, langue différente (arabe) : autorisé", arInsertOk);
+  // The French sibling is a legitimate second variant; the next insert repeats
+  // the Arabic key and must be rejected.
+  await tplRow(M1, "custom_order_confirmed", "fr", "Bonjour {{1}}, votre commande {{2}} est confirmée.");
   let dupThrew = false;
   try {
-    await tplRow(M1, "order_confirmed", "fr", "Corps dupliqué volontairement pour le test.");
+    await tplRow(M1, "custom_order_confirmed", "ar", "Corps dupliqué volontairement pour le test.");
   } catch {
     dupThrew = true;
   }
   record("Doublon (même nom, même langue) : refusé par la contrainte unique", dupThrew);
   let otherMerchantOk = true;
   try {
-    await tplRow(M2, "order_confirmed", "fr", "Bonjour {{1}}, votre commande {{2}} est confirmée.");
+    await tplRow(M2, "custom_order_confirmed", "fr", "Bonjour {{1}}, votre commande {{2}} est confirmée.");
   } catch {
     otherMerchantOk = false;
   }
   record("Même nom + langue chez UN AUTRE marchand : autorisé (pas de collision croisée)", otherMerchantOk);
   let enInsertOk = true;
   try {
-    await tplRow(M1, "order_confirmed", "en", "Hi {{customer_name}}, your order {{order_ref}} is confirmed.");
+    await tplRow(M1, "custom_order_confirmed", "en", "Hi {{customer_name}}, your order {{order_ref}} is confirmed.");
   } catch {
     enInsertOk = false;
   }
   record("Même nom, troisième langue (anglais) : autorisé", enInsertOk);
   const variantsCount = Number(
-    (await get<{ c: number }>("SELECT COUNT(*) AS c FROM whatsapp_templates WHERE merchant_id = ? AND name = 'order_confirmed'", [M1]))?.c,
+    (await get<{ c: number }>("SELECT COUNT(*) AS c FROM whatsapp_templates WHERE merchant_id = ? AND name = 'custom_order_confirmed'", [M1]))?.c,
   );
   record("Trois variantes (fr/ar/en) coexistent sous un même nom", variantsCount === 3, `${variantsCount} variante(s)`);
-  const arBodyRead = await get<{ body: string }>("SELECT body FROM whatsapp_templates WHERE merchant_id = ? AND name = 'order_confirmed' AND language = 'ar'", [M1]);
+  const arBodyRead = await get<{ body: string }>("SELECT body FROM whatsapp_templates WHERE merchant_id = ? AND name = 'custom_order_confirmed' AND language = 'ar'", [M1]);
   record("Le corps arabe est conservé à l'identique (aller-retour base)", arBodyRead?.body === AR_BODY_B);
 
   /* ================================================================== */

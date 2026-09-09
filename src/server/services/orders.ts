@@ -155,6 +155,7 @@ export type OrderFilters = {
   deliveryStatus?: string[];
   provider?: string;
   waStatus?: string;
+  satisfaction?: string;
   from?: string;
   to?: string;
   assigned?: string;
@@ -201,6 +202,12 @@ export async function listOrders(f: OrderFilters) {
   if (f.waStatus) {
     where.push("o.whatsapp_status = ?");
     params.push(f.waStatus);
+  }
+  if (f.satisfaction === "rated") where.push("o.satisfaction_score IS NOT NULL");
+  else if (f.satisfaction === "unrated") where.push("o.satisfaction_score IS NULL");
+  else if (f.satisfaction && /^[1-5]$/.test(f.satisfaction)) {
+    where.push("o.satisfaction_score = ?");
+    params.push(Number(f.satisfaction));
   }
   if (f.assigned) {
     where.push("o.assigned_user_id = ?");

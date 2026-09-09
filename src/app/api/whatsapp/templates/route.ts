@@ -4,6 +4,7 @@ import { jsonError, ok, parseBody } from "@/server/http";
 import { all, get, run, uid, nowIso } from "@/server/db";
 import { extractTemplateVariables } from "@/server/connectors/whatsapp";
 import { audit } from "@/server/services/audit";
+import { TEMPLATE_GROUPS } from "@/lib/domain";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ const schema = z.object({
   language: z.enum(["fr", "ar", "en"]),
   body: z.string().min(5).max(1024),
   eventKey: z.string().max(60).nullable().optional(),
+  templateGroup: z.enum(TEMPLATE_GROUPS).optional(),
   buttons: z.array(z.string().max(24)).max(3).optional(),
 });
 
@@ -39,9 +41,22 @@ export async function POST(req: Request) {
     const id = uid("tpl");
     const variables = extractTemplateVariables(body.body);
     await run(
-      `INSERT INTO whatsapp_templates (id, merchant_id, name, category, language, status, body, variables, buttons, event_key)
-       VALUES (?,?,?,?,?, 'draft', ?, ?, ?, ?)`,
-      [id, ctx.merchantId, body.name, body.category, body.language, body.body, JSON.stringify(variables), JSON.stringify(body.buttons ?? []), body.eventKey ?? null],
+      `INSERT INTO whatsapp_templates
+        (id, merchant_id, name, category, language, status, body, variables, buttons, event_key, template_group, group_key)
+       VALUES (?,?,?,?,?, 'draft', ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        ctx.merchantId,
+        body.name,
+        body.category,
+        body.language,
+        body.body,
+        JSON.stringify(variables),
+        JSON.stringify(body.buttons ?? []),
+        body.eventKey ?? null,
+        body.templateGroup ?? "confirmation",
+        body.templateGroup ?? "confirmation",
+      ],
     );
     await audit({ merchantId: ctx.merchantId, actorId: ctx.user.id, actorLabel: ctx.user.email, action: "template.created", resource: "template", resourceId: id, ip: await clientIp() });
     return ok({ ok: true, id, updatedAt: nowIso() }, { status: 201 });

@@ -197,6 +197,9 @@ CREATE TABLE IF NOT EXISTS orders (
   last_message_at TEXT,
   last_reply_at TEXT,
   attention INTEGER NOT NULL DEFAULT 0,
+  satisfaction_score INTEGER,
+  satisfaction_comment TEXT,
+  satisfaction_at TEXT,
   is_test INTEGER NOT NULL DEFAULT 0,
   order_date TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -378,11 +381,14 @@ CREATE TABLE IF NOT EXISTS whatsapp_templates (
   event_key TEXT,
   quality TEXT,
   meta_template_id TEXT,
+  template_group TEXT NOT NULL DEFAULT 'confirmation',
+  group_key TEXT NOT NULL DEFAULT 'confirmation',
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (merchant_id, name, language)
 );
 CREATE INDEX IF NOT EXISTS idx_templates_merchant ON whatsapp_templates(merchant_id, status);
+CREATE INDEX IF NOT EXISTS idx_templates_group ON whatsapp_templates(merchant_id, template_group, language, status);
 
 CREATE TABLE IF NOT EXISTS automations (
   id TEXT PRIMARY KEY,
@@ -392,6 +398,8 @@ CREATE TABLE IF NOT EXISTS automations (
   enabled INTEGER NOT NULL DEFAULT 1,
   template_id TEXT REFERENCES whatsapp_templates(id) ON DELETE SET NULL,
   config TEXT,
+  automation_group TEXT NOT NULL DEFAULT 'tracking',
+  group_key TEXT NOT NULL DEFAULT 'tracking',
   cooldown_minutes INTEGER NOT NULL DEFAULT 180,
   delay_minutes INTEGER NOT NULL DEFAULT 0,
   last_run_at TEXT,
@@ -416,6 +424,24 @@ CREATE TABLE IF NOT EXISTS automation_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_automation_runs_merchant ON automation_runs(merchant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS satisfaction_scores (
+  id TEXT PRIMARY KEY,
+  merchant_id TEXT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+  order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  conversation_id TEXT REFERENCES whatsapp_conversations(id) ON DELETE SET NULL,
+  message_id TEXT REFERENCES whatsapp_messages(id) ON DELETE SET NULL,
+  score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 5),
+  rating INTEGER,
+  comment TEXT,
+  source TEXT NOT NULL DEFAULT 'whatsapp',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (merchant_id, order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_satisfaction_scores_merchant ON satisfaction_scores(merchant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_satisfaction_scores_customer ON satisfaction_scores(customer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_satisfaction_scores_order ON satisfaction_scores(order_id);
 
 CREATE TABLE IF NOT EXISTS integrations (
   id TEXT PRIMARY KEY,

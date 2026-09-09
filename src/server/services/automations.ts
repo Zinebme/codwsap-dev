@@ -1,7 +1,7 @@
 import "server-only";
 import { get, run, uid, nowIso } from "@/server/db";
 import type { AutomationType, DeliveryStatus } from "@/lib/domain";
-import { AUTOMATION_META, formatDzd } from "@/lib/domain";
+import { AUTOMATION_GROUP, AUTOMATION_META, formatDzd } from "@/lib/domain";
 import { queueMessage, isCustomerRelevantDeliveryStatus, orderVariables, customerLanguage } from "@/server/services/messaging";
 import { notify } from "@/server/services/notifications";
 import { enqueueJob, toSql } from "@/server/jobs/queue";
@@ -15,6 +15,8 @@ type Automation = {
   config: string | null;
   cooldown_minutes: number;
   delay_minutes: number;
+  automation_group: string;
+  group_key: string;
 };
 
 export async function getAutomation(merchantId: string, type: AutomationType): Promise<Automation | undefined> {
@@ -35,9 +37,14 @@ export async function seedAutomations(merchantId: string) {
   ];
   for (const d of defaults) {
     await run(
-      `INSERT OR IGNORE INTO automations (id, merchant_id, type, name, enabled, cooldown_minutes, delay_minutes)
-       VALUES (?,?,?,?,?,?,?)`,
-      [uid("atm"), merchantId, d.type, AUTOMATION_META[d.type].fr, d.enabled, d.cooldown, d.delay],
+      `INSERT OR IGNORE INTO automations
+        (id, merchant_id, type, name, enabled, automation_group, group_key, cooldown_minutes, delay_minutes)
+       VALUES (?,?,?,?,?,?,?, ?,?)`,
+      [uid("atm"), merchantId, d.type, AUTOMATION_META[d.type].fr, d.enabled, AUTOMATION_GROUP[d.type], AUTOMATION_GROUP[d.type], d.cooldown, d.delay],
+    );
+    await run(
+      "UPDATE automations SET automation_group = ?, group_key = ? WHERE merchant_id = ? AND type = ?",
+      [AUTOMATION_GROUP[d.type], AUTOMATION_GROUP[d.type], merchantId, d.type],
     );
   }
 }

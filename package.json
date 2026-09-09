@@ -22,6 +22,8 @@
     "test:admin-ops": "tsx --conditions=react-server scripts/test-admin-ops.ts",
     "test:whatsapp": "tsx --conditions=react-server scripts/test-whatsapp.ts",
     "test:templates": "tsx --conditions=react-server scripts/test-templates.ts",
+    "test:automations": "tsx --conditions=react-server scripts/test-automations.ts",
+    "test:satisfaction": "tsx --conditions=react-server scripts/test-satisfaction.ts",
     "test:sheets": "tsx --conditions=react-server scripts/test-sheets.ts",
     "test:telegram": "tsx --conditions=react-server scripts/test-telegram.ts"
   },
