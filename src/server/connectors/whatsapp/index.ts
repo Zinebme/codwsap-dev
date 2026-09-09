@@ -203,3 +203,12 @@ export function renderTemplate(body: string, vars: Record<string, string>): stri
   return body.replace(/\{\{\s*([\w\d_]+)\s*\}\}/g, (_m, key: string) => vars[key] ?? vars[`v${key}`] ?? "");
 }
 
+/**
+ * Placeholders {{…}} d'un corps de template (fr, ar, en…), dans l'ordre
+ * d'apparition. Même grammaire que renderTemplate : les deux fonctionnent
+ * ensemble sur n'importe quelle langue.
+ * Fonction pure : testable hors ligne, sans appel réseau.
+ */
+export function extractTemplateVariables(body: string): string[] {
+  return Array.from(body.matchAll(/\{\{\s*([\w\d_]+)\s*\}\}/g)).map((m) => m[1]);
+}

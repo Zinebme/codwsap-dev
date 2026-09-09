@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { requirePermission, requireTenant, clientIp } from "@/server/auth/session";
+import { requirePermission, requireTenant, clientIp, HttpError } from "@/server/auth/session";
 import { jsonError, ok, parseBody } from "@/server/http";
-import { all, run, uid, nowIso } from "@/server/db";
+import { all, get, run, uid, nowIso } from "@/server/db";
+import { extractTemplateVariables } from "@/server/connectors/whatsapp";
 import { audit } from "@/server/services/audit";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +29,15 @@ export async function POST(req: Request) {
   try {
     const ctx = await requirePermission("templates.write");
     const body = await parseBody(req, schema);
+    // Un même nom de template peut exister en PLUSIEURS langues (fr/ar/en) :
+    // le couple (nom, langue) est la clé métier, pas le nom seul.
+    const existing = await get<{ id: string }>(
+      "SELECT id FROM whatsapp_templates WHERE merchant_id = ? AND name = ? AND language = ?",
+      [ctx.merchantId, body.name, body.language],
+    );
+    if (existing) throw new HttpError(409, "Un template de ce nom existe déjà dans cette langue.", "conflict");
     const id = uid("tpl");
-    const variables = Array.from(body.body.matchAll(/\{\{\s*([\w\d_]+)\s*\}\}/g)).map((m) => m[1]);
+    const variables = extractTemplateVariables(body.body);
     await run(
       `INSERT INTO whatsapp_templates (id, merchant_id, name, category, language, status, body, variables, buttons, event_key)
        VALUES (?,?,?,?,?, 'draft', ?, ?, ?, ?)`,

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { Plus, FileText, Trash2, Pencil } from "lucide-react";
+import { Plus, FileText, Trash2, Pencil, Languages } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
@@ -21,6 +21,7 @@ export default function TemplatesPage() {
   const { data, isLoading, mutate } = useSWR<{ rows: Tpl[] }>("/api/whatsapp/templates", fetcher);
   const [editing, setEditing] = React.useState<Tpl | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const [translating, setTranslating] = React.useState<Tpl | null>(null);
 
   async function save(body: Record<string, unknown>, id?: string) {
     const res = await fetch(id ? `/api/whatsapp/templates/${id}` : "/api/whatsapp/templates", {
@@ -33,6 +34,7 @@ export default function TemplatesPage() {
     push({ variant: "success", title: ar ? "تم الحفظ" : "Template enregistré" });
     setEditing(null);
     setCreating(false);
+    setTranslating(null);
     mutate();
   }
 
@@ -68,6 +70,12 @@ export default function TemplatesPage() {
                 <Dropdown trigger={<Button size="icon" variant="ghost"><Pencil className="h-3.5 w-3.5" /></Button>}>
                   <DropdownItem icon={Pencil} onClick={() => setEditing(t)}>{ar ? "تعديل" : "Modifier"}</DropdownItem>
                   <DropdownItem
+                    icon={Languages}
+                    onClick={() => setTranslating(t)}
+                  >
+                    {ar ? "نسخة بلغة أخرى" : "Autre langue"}
+                  </DropdownItem>
+                  <DropdownItem
                     icon={Trash2}
                     danger
                     onClick={async () => {
@@ -90,26 +98,56 @@ export default function TemplatesPage() {
       )}
 
       <TemplateModal
-        open={creating || !!editing}
+        open={creating || !!editing || !!translating}
         template={editing}
+        prefill={
+          translating
+            ? {
+                name: String(translating.name),
+                body: String(translating.body ?? ""),
+                language: String(translating.language) === "fr" ? "ar" : "fr",
+              }
+            : undefined
+        }
         ar={ar}
-        onClose={() => { setCreating(false); setEditing(null); }}
+        onClose={() => { setCreating(false); setEditing(null); setTranslating(null); }}
         onSave={save}
       />
     </div>
   );
 }
 
-function TemplateModal({ open, template, ar, onClose, onSave }: { open: boolean; template: Tpl | null; ar: boolean; onClose: () => void; onSave: (b: Record<string, unknown>, id?: string) => void }) {
+function TemplateModal({
+  open,
+  template,
+  prefill,
+  ar,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  template: Tpl | null;
+  /** Création pré-remplie (ex. « Autre langue » : même nom, corps à traduire). */
+  prefill?: { name?: string; body?: string; language?: string };
+  ar: boolean;
+  onClose: () => void;
+  onSave: (b: Record<string, unknown>, id?: string) => void;
+}) {
   const [body, setBody] = React.useState("");
-  React.useEffect(() => setBody(String(template?.body ?? "")), [template, open]);
+  React.useEffect(() => setBody(String(template?.body ?? prefill?.body ?? "")), [template, prefill, open]);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       width="max-w-xl"
-      title={template ? (ar ? "تعديل القالب" : "Modifier le template") : ar ? "قالب جديد" : "Nouveau template"}
+      title={
+        template
+          ? ar ? "تعديل القالب" : "Modifier le template"
+          : prefill
+            ? ar ? "نسخة بلغة أخرى" : "Autre langue du template"
+            : ar ? "قالب جديد" : "Nouveau template"
+      }
       footer={
         <>
           <Button onClick={onClose}>{ar ? "إلغاء" : "Annuler"}</Button>
@@ -139,11 +177,14 @@ function TemplateModal({ open, template, ar, onClose, onSave }: { open: boolean;
       >
         {!template && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={ar ? "الاسم (بالإنجليزية، أحرف صغيرة)" : "Nom (minuscules, underscores)"}>
-              <Input name="name" required pattern="[a-z0-9_]+" dir="ltr" placeholder="order_confirmation" />
+            <Field
+              label={ar ? "الاسم (بالإنجليزية، أحرف صغيرة)" : "Nom (minuscules, underscores)"}
+              hint={prefill?.name ? (ar ? "الحفاظ على نفس الاسم يربط النسخ المتعددة للغات." : "Gardez le même nom : c'est lui qui relie les versions multilingues.") : undefined}
+            >
+              <Input name="name" required pattern="[a-z0-9_]+" dir="ltr" placeholder="order_confirmation" defaultValue={prefill?.name ?? ""} />
             </Field>
             <Field label={ar ? "اللغة" : "Langue"}>
-              <Select name="language" defaultValue="fr">
+              <Select name="language" defaultValue={prefill?.language ?? "fr"}>
                 <option value="fr">Français</option>
                 <option value="ar">العربية</option>
                 <option value="en">English</option>
