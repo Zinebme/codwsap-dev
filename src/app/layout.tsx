@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   description:
     "Plateforme algérienne pour marchands COD : confirmation WhatsApp, gestion des commandes, suivi des colis multi-transporteurs, automatisations et statistiques.",
   metadataBase: new URL("https://codwsap.app"),
+  manifest: "/manifest.webmanifest",
+  applicationName: "CODWSAP",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "CODWSAP" },
   openGraph: {
     title: "CODWSAP — Automatisez vos commandes COD sur WhatsApp",
     description: "Confirmez vos commandes, notifiez vos clients, suivez vos colis et pilotez tout depuis un seul tableau de bord.",
@@ -18,6 +21,7 @@ export const viewport: Viewport = {
   themeColor: "#1c5cf0",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

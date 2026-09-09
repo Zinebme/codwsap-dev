@@ -86,12 +86,12 @@ export function PhoneCell({ phone, original }: { phone?: string | null; original
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-3 flex flex-col gap-2.5 lg:mb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight text-ink-900 sm:text-xl">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-[13px] text-ink-500">{subtitle}</p>}
+        <h1 className="text-xl font-semibold tracking-tight text-ink-900">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-sm leading-snug text-ink-500 lg:text-[13px]">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="mobile-actions flex items-center gap-2 overflow-x-auto pb-0.5 lg:flex-wrap lg:overflow-visible lg:pb-0">{actions}</div>}
     </div>
   );
 }

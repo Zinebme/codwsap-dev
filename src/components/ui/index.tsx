@@ -139,9 +139,9 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, width
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-end pt-[env(safe-area-inset-top)] lg:pt-0">
       <div className="absolute inset-0 bg-ink-900/30" onClick={onClose} />
-      <div className={cn("drawer-in relative flex h-full w-full flex-col bg-white shadow-2xl", width)}>
+      <div className={cn("drawer-in relative flex h-[100dvh] w-full flex-col bg-white shadow-2xl lg:h-full", width)}>
         <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-4 py-3 sm:px-5">
           <div className="min-w-0">
             {title && <div className="truncate text-[15px] font-semibold text-ink-900">{title}</div>}
@@ -152,7 +152,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer, width
           </Button>
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
-        {footer && <div className="border-t border-ink-100 bg-ink-50/60 px-4 py-3 sm:px-5">{footer}</div>}
+        {footer && <div className="border-t border-ink-100 bg-ink-50/60 px-4 py-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] sm:px-5 lg:pb-3">{footer}</div>}
       </div>
     </div>
   );
@@ -175,17 +175,18 @@ export function Modal({ open, onClose, title, children, footer, width = "max-w-l
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 lg:items-center lg:p-4">
       <div className="absolute inset-0 bg-ink-900/30" onClick={onClose} />
-      <div className={cn("fade-in relative w-full rounded-t-2xl bg-white shadow-2xl sm:rounded-xl", width)}>
+      <div className={cn("fade-in relative flex max-h-[calc(100dvh-env(safe-area-inset-top))] w-full flex-col rounded-t-3xl bg-white shadow-2xl lg:block lg:max-h-none lg:rounded-xl", width)}>
+        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-ink-200 lg:hidden" />
         <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
           <h3 className="text-[15px] font-semibold text-ink-900">{title}</h3>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fermer">
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-ink-100 px-4 py-3">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:max-h-[70vh]">{children}</div>
+        {footer && <div className="flex justify-end gap-2 border-t border-ink-100 px-4 py-3 pb-[calc(.75rem+env(safe-area-inset-bottom))] lg:pb-3">{footer}</div>}
       </div>
     </div>
   );

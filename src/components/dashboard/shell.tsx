@@ -59,7 +59,7 @@ export function DashboardShell({ me, children }: { me: Me; children: React.React
 
   return (
     <LocaleContext.Provider value={{ locale, setLocale, t }}>
-      <div className="min-h-screen bg-[var(--bg)]" dir={dir(locale)}>
+      <div className="mobile-app-shell min-h-screen bg-[var(--bg)]" dir={dir(locale)}>
         {/* Sidebar (desktop) */}
         <aside className="fixed inset-y-0 start-0 z-30 hidden w-60 flex-col border-e border-ink-200 bg-white lg:flex">
           <div className="flex h-14 items-center gap-2 border-b border-ink-100 px-4">
@@ -74,21 +74,33 @@ export function DashboardShell({ me, children }: { me: Me; children: React.React
         {mobileNav && (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div className="absolute inset-0 bg-ink-900/30" onClick={() => setMobileNav(false)} />
-            <div className="drawer-in absolute inset-y-0 start-0 flex w-64 flex-col bg-white">
-              <div className="flex h-14 items-center justify-between border-b border-ink-100 px-4">
-                <span className="text-[14px] font-semibold">CODWSAP</span>
-                <button onClick={() => setMobileNav(false)}>
+            <div className="drawer-in absolute inset-y-0 start-0 flex w-[min(86vw,20rem)] flex-col rounded-e-3xl bg-white shadow-2xl">
+              <div className="flex min-h-16 items-center justify-between border-b border-ink-100 px-4 pt-[env(safe-area-inset-top)]">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-xl bg-brand-600 text-[14px] font-bold text-white">C</span>
+                  <div><p className="text-[14px] font-semibold text-ink-900">CODWSAP</p><p className="max-w-40 truncate text-xs text-ink-400">{me.merchant.name}</p></div>
+                </div>
+                <button className="grid h-11 w-11 place-items-center rounded-xl text-ink-500 active:bg-ink-100" onClick={() => setMobileNav(false)}>
                   <X className="h-5 w-5 text-ink-500" />
                 </button>
               </div>
               <SidebarNav t={t} pathname={pathname} role={me.role} />
+              <div className="border-t border-ink-100 px-3 pt-3">
+                <button onClick={() => setLocale(locale === "fr" ? "ar" : "fr")} className="flex h-11 w-full items-center gap-2.5 rounded-xl px-3 text-sm font-medium text-ink-600 active:bg-ink-100">
+                  <Globe className="h-[18px] w-[18px] text-ink-400" />{locale === "fr" ? "العربية" : "Français"}
+                </button>
+              </div>
+              <PlanCard me={me} locale={locale} />
             </div>
           </div>
         )}
 
         <div className="lg:ps-60">
           <TopBar me={me} locale={locale} setLocale={setLocale} onMenu={() => setMobileNav(true)} t={t} />
-          <main className="px-3 pb-20 pt-4 sm:px-5 lg:pb-8">{children}</main>
+          <MobileTopBar me={me} pathname={pathname} locale={locale} onMenu={() => setMobileNav(true)} t={t} />
+          <main className="min-w-0 px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-3 sm:px-5 lg:pb-8 lg:pt-4">
+            <div key={pathname} className="mobile-page-in">{children}</div>
+          </main>
           <MobileTabBar pathname={pathname} t={t} />
         </div>
       </div>
@@ -139,7 +151,7 @@ function PlanCard({ me, locale }: { me: Me; locale: Locale }) {
 function TopBar({ me, locale, setLocale, onMenu, t }: { me: Me; locale: Locale; setLocale: (l: Locale) => void; onMenu: () => void; t: (k: string) => string }) {
   const router = useRouter();
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-ink-200 bg-white/90 px-3 backdrop-blur sm:px-5">
+    <header className="sticky top-0 z-20 hidden h-14 items-center gap-2 border-b border-ink-200 bg-white/90 px-5 backdrop-blur lg:flex">
       <button className="lg:hidden" onClick={onMenu} aria-label="Menu">
         <Menu className="h-5 w-5 text-ink-600" />
       </button>
@@ -192,7 +204,37 @@ function TopBar({ me, locale, setLocale, onMenu, t }: { me: Me; locale: Locale; 
   );
 }
 
-function GlobalSearch({ t }: { t: (k: string) => string }) {
+function MobileTopBar({ me, pathname, locale, onMenu, t }: { me: Me; pathname: string; locale: Locale; onMenu: () => void; t: (k: string) => string }) {
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const current = NAV.find((item) => item.exact ? pathname === item.href : pathname.startsWith(item.href));
+  return (
+    <>
+      <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-ink-100 bg-white/92 px-3 pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(20,25,34,.03)] backdrop-blur-xl lg:hidden">
+        <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-ink-600 active:scale-95 active:bg-ink-100" onClick={onMenu} aria-label="Menu">
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold leading-tight text-ink-900">{current ? t(current.key) : "CODWSAP"}</p>
+          <p className="mt-0.5 truncate text-xs leading-tight text-ink-400">{me.merchant.name}</p>
+        </div>
+        <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-ink-600 active:scale-95 active:bg-ink-100" onClick={() => setSearchOpen(true)} aria-label={t("d.search")}>
+          <Search className="h-[19px] w-[19px]" />
+        </button>
+        <NotificationBell t={t} locale={locale} mobile />
+      </header>
+      {searchOpen && (
+        <div className="fixed inset-0 z-50 bg-white px-3 pb-[env(safe-area-inset-bottom)] pt-[calc(.75rem+env(safe-area-inset-top))] lg:hidden">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1"><GlobalSearch t={t} autoFocus onNavigate={() => setSearchOpen(false)} /></div>
+            <button className="grid h-11 w-11 place-items-center rounded-xl text-ink-500 active:bg-ink-100" onClick={() => setSearchOpen(false)} aria-label="Fermer"><X className="h-5 w-5" /></button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function GlobalSearch({ t, autoFocus = false, onNavigate }: { t: (k: string) => string; autoFocus?: boolean; onNavigate?: () => void }) {
   const [q, setQ] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [debounced, setDebounced] = React.useState("");
@@ -218,6 +260,7 @@ function GlobalSearch({ t }: { t: (k: string) => string }) {
     <div className="relative w-full max-w-md" ref={ref}>
       <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
       <input
+        autoFocus={autoFocus}
         value={q}
         onChange={(e) => {
           setQ(e.target.value);
@@ -236,7 +279,7 @@ function GlobalSearch({ t }: { t: (k: string) => string }) {
           )}
           {!isLoading && !data?.orders.length && !data?.customers.length && <p className="px-3 py-3 text-[13px] text-ink-400">{t("d.empty")}</p>}
           {data?.orders.map((o) => (
-            <Link key={o.id} href={`/dashboard/orders?order=${o.id}`} onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-ink-50">
+            <Link key={o.id} href={`/dashboard/orders?order=${o.id}`} onClick={() => { setOpen(false); onNavigate?.(); }} className="block px-3 py-2 hover:bg-ink-50">
               <p className="text-[13px] font-medium text-ink-800">
                 {o.reference} · {o.customer_name}
               </p>
@@ -244,7 +287,7 @@ function GlobalSearch({ t }: { t: (k: string) => string }) {
             </Link>
           ))}
           {data?.customers.map((c) => (
-            <Link key={c.id} href={`/dashboard/customers?c=${c.id}`} onClick={() => setOpen(false)} className="block px-3 py-2 hover:bg-ink-50">
+            <Link key={c.id} href={`/dashboard/customers?c=${c.id}`} onClick={() => { setOpen(false); onNavigate?.(); }} className="block px-3 py-2 hover:bg-ink-50">
               <p className="text-[13px] font-medium text-ink-800">{c.full_name || c.normalized_phone}</p>
               <p className="text-[11.5px] text-ink-400" dir="ltr">
                 {c.normalized_phone}
@@ -303,14 +346,14 @@ function HealthIndicator({ me, locale }: { me: Me; locale: Locale }) {
 
 type Notif = { id: string; title: string; body: string | null; severity: string; link: string | null; created_at: string; read_at: string | null };
 
-function NotificationBell({ t, locale }: { t: (k: string) => string; locale: Locale }) {
+function NotificationBell({ t, locale, mobile = false }: { t: (k: string) => string; locale: Locale; mobile?: boolean }) {
   const { data, mutate } = useSWR<{ rows: Notif[]; unread: number }>("/api/notifications?limit=12", fetcher, { refreshInterval: 25_000 });
   const unread = data?.unread ?? 0;
   return (
     <Dropdown
       className="w-[min(22rem,calc(100vw-1.5rem))]"
       trigger={
-        <button className="relative rounded-lg border border-ink-200 p-1.5 hover:bg-ink-50" aria-label="Notifications">
+        <button className={cn("relative grid place-items-center rounded-xl text-ink-600", mobile ? "h-11 w-11 border-0 active:scale-95 active:bg-ink-100" : "h-8 w-8 border border-ink-200 hover:bg-ink-50")} aria-label="Notifications">
           <Bell className="h-4 w-4 text-ink-600" />
           {unread > 0 && (
             <span className="absolute -end-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white tabular">
@@ -364,13 +407,14 @@ function NotificationBell({ t, locale }: { t: (k: string) => string; locale: Loc
 function MobileTabBar({ pathname, t }: { pathname: string; t: (k: string) => string }) {
   const items = NAV.filter((n) => ["/dashboard", "/dashboard/orders", "/dashboard/whatsapp", "/dashboard/customers", "/dashboard/settings"].includes(n.href));
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-ink-200 bg-white/95 backdrop-blur lg:hidden">
+    <nav aria-label="Navigation principale" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-ink-100 bg-white/92 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(20,25,34,.06)] backdrop-blur-xl lg:hidden">
       {items.map((i) => {
         const active = i.exact ? pathname === i.href : pathname.startsWith(i.href);
         return (
-          <Link key={i.href} href={i.href} className={cn("flex flex-col items-center gap-0.5 py-2 text-[10.5px]", active ? "text-brand-700" : "text-ink-500")}>
-            <i.icon className="h-[18px] w-[18px]" />
-            {t(i.key)}
+          <Link key={i.href} href={i.href} aria-current={active ? "page" : undefined} className={cn("relative flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[11.5px] font-medium transition active:scale-95", active ? "text-brand-700" : "text-ink-500")}>
+            {active && <span className="absolute top-1 h-1 w-5 rounded-full bg-brand-600" />}
+            <i.icon className={cn("h-5 w-5", active && "stroke-[2.4]")} />
+            <span className="max-w-full truncate">{t(i.key)}</span>
           </Link>
         );
       })}
