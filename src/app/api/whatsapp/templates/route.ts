@@ -1,4 +1,5 @@
-import { listTemplates } from "@/server/services/templateFilters";
+import { listTemplates, repairTemplateGroups } from "@/server/services/templateFilters";
+import { seedTemplates } from "@/server/services/seedTemplates";
 import { z } from "zod";
 import { requirePermission, requireTenant, clientIp, HttpError } from "@/server/auth/session";
 import { jsonError, ok, parseBody } from "@/server/http";
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   try {
     const ctx = await requireTenant();
+    // Safe and idempotent: repairs legacy groups and inserts only missing
+    // starter languages. Existing merchant/Meta rows are never updated.
+    await repairTemplateGroups(ctx.merchantId);
+    await seedTemplates(ctx.merchantId);
     return ok({ rows: await listTemplates(ctx.merchantId, new URL(req.url).searchParams) });
   } catch (e) {
     return jsonError(e);

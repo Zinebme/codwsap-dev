@@ -1,7 +1,27 @@
 import "server-only";
 import { z } from "zod";
-import { TEMPLATE_GROUPS } from "@/lib/domain";
-import { all } from "@/server/db";
+import { TEMPLATE_GROUPS, type TemplateGroup } from "@/lib/domain";
+import { all, run } from "@/server/db";
+
+const GROUP_BY_NAME: Record<TemplateGroup, string[]> = {
+  confirmation: ["order_confirmation_request", "order_confirmed", "order_cancelled", "order_postponed", "confirmation_reminder"],
+  tracking: ["order_preparing", "order_shipped", "order_in_transit", "parcel_at_office", "out_for_delivery", "delivery_reminder"],
+  return: ["delivery_failed", "return_requested", "order_returned", "returned_to_sender", "return_followup", "parcel_returned"],
+  satisfaction: ["order_delivered", "delivered_thank_you", "satisfaction_request", "satisfaction_followup", "satisfaction_thanks"],
+};
+
+/** Repairs the current merchant even when deployment migrations are applied later. */
+export async function repairTemplateGroups(merchantId: string) {
+  for (const [group, names] of Object.entries(GROUP_BY_NAME)) {
+    const placeholders = names.map(() => "?").join(",");
+    await run(
+      `UPDATE whatsapp_templates SET template_group = ?, group_key = ?
+       WHERE merchant_id = ? AND name IN (${placeholders})
+         AND (template_group <> ? OR group_key <> ?)`,
+      [group, group, merchantId, ...names, group, group],
+    );
+  }
+}
 
 const filtersSchema = z.object({
   group: z.enum(TEMPLATE_GROUPS).optional(),
