@@ -21,6 +21,7 @@ export async function GET(req: Request) {
       deliveryStatus: multi("deliveryStatus"),
       provider: p.get("provider") ?? undefined,
       waStatus: p.get("wa") ?? undefined,
+      satisfaction: p.get("satisfaction") ?? undefined,
       from: p.get("from") ?? undefined,
       to: p.get("to") ?? undefined,
       assigned: p.get("assigned") ?? undefined,

@@ -8,7 +8,7 @@ import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
 import { Card, CardHeader, CardTitle, Badge, Button, Select, Toggle, Skeleton, EmptyState, Modal, useToast } from "@/components/ui";
-import { AUTOMATION_META, type AutomationType } from "@/lib/domain";
+import { AUTOMATION_META, TEMPLATE_GROUPS, TEMPLATE_GROUP_META, type AutomationType, type TemplateGroup } from "@/lib/domain";
 import { SUPPRESSION_LABELS_CLIENT } from "../orders/labels";
 
 type Automation = {
@@ -21,6 +21,8 @@ type Automation = {
   template_status: string | null;
   cooldown_minutes: number;
   delay_minutes: number;
+  automation_group: TemplateGroup;
+  group_name?: string;
   last_run_at: string | null;
   last_status: string | null;
   run_count: number;
@@ -35,7 +37,9 @@ export default function AutomationsPage() {
   const f = useFormat();
   const ar = locale === "ar";
   const { push } = useToast();
-  const { data, isLoading, mutate } = useSWR<{ rows: Automation[]; templates: Tpl[]; runs: Run[] }>("/api/automations", fetcher, { refreshInterval: 60_000 });
+  const [groupFilter, setGroupFilter] = React.useState<TemplateGroup | "">("");
+  const automationUrl = groupFilter ? `/api/automations?group=${groupFilter}` : "/api/automations";
+  const { data, isLoading, mutate } = useSWR<{ rows: Automation[]; templates: Tpl[]; runs: Run[] }>(automationUrl, fetcher, { refreshInterval: 60_000 });
   const [preview, setPreview] = React.useState<{ title: string; body?: string; error?: string; templateName?: string; templateStatus?: string } | null>(null);
   const [previewBusy, setPreviewBusy] = React.useState(false);
 
@@ -91,6 +95,17 @@ export default function AutomationsPage() {
         </p>
       </Card>
 
+      <Card className="flex flex-wrap gap-1.5 p-2.5">
+        <button onClick={() => setGroupFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${!groupFilter ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
+          {ar ? "الكل" : "Tous"}
+        </button>
+        {TEMPLATE_GROUPS.map((group) => (
+          <button key={group} onClick={() => setGroupFilter(group)} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${groupFilter === group ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
+            {ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}
+          </button>
+        ))}
+      </Card>
+
       {isLoading || !data ? (
         <div className="grid gap-3 lg:grid-cols-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-[14px]" />)}</div>
       ) : !data.rows.length ? (
@@ -107,6 +122,7 @@ export default function AutomationsPage() {
                     <div className="flex items-center gap-2">
                       <p className="text-[13.5px] font-semibold text-ink-900">{ar ? meta?.ar ?? a.name : meta?.fr ?? a.name}</p>
                       <Badge tone={a.enabled ? "green" : "gray"} dot>{a.enabled ? (ar ? "مفعّلة" : "Active") : ar ? "متوقفة" : "Inactive"}</Badge>
+                      <Badge tone="teal">{ar ? TEMPLATE_GROUP_META[a.automation_group]?.ar : TEMPLATE_GROUP_META[a.automation_group]?.fr}</Badge>
                     </div>
                     <p className="mt-1 text-[12px] leading-relaxed text-ink-500">{ar ? meta?.desc_ar : meta?.desc_fr}</p>
                   </div>

@@ -7,7 +7,7 @@ import { Download } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader, KpiCard } from "@/components/dashboard/common";
-import { Card, CardHeader, CardTitle, CardBody, Button, Input, Skeleton, cn } from "@/components/ui";
+import { Card, CardHeader, CardTitle, CardBody, Button, Input, Select, Skeleton, cn } from "@/components/ui";
 
 const BRAND = "#1c5cf0", SUCCESS = "#10b981", DANGER = "#ef4444", AMBER = "#f59e0b", GRID = "#eef0f4", AXIS = "#98a1b3";
 
@@ -16,6 +16,11 @@ type Payload = {
   kpi: Record<string, number>;
   ordersByDay: { day: string; orders: number; delivered: number; returned: number; confirmed: number }[];
   messagesByDay: { day: string; sent: number; failed: number; inbound: number }[];
+  filters: { minScore: number | null; maxScore: number | null };
+  satisfaction: {
+    summary: { responses: number; average: number; positiveRate: number; distribution: Record<string, number> };
+    byDay: { day: string; responses: number; average: number }[];
+  };
 };
 
 export default function AnalyticsPage() {
@@ -25,8 +30,12 @@ export default function AnalyticsPage() {
   const [preset, setPreset] = React.useState("30d");
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
+  const [minScore, setMinScore] = React.useState("");
+  const [maxScore, setMaxScore] = React.useState("");
   const qs = new URLSearchParams({ preset });
   if (preset === "custom" && from && to) { qs.set("from", from); qs.set("to", to); }
+  if (minScore) qs.set("minScore", minScore);
+  if (maxScore) qs.set("maxScore", maxScore);
   const { data, isLoading } = useSWR<Payload>(`/api/analytics?${qs}`, fetcher, { keepPreviousData: true });
 
   const presets = [
@@ -68,6 +77,17 @@ export default function AnalyticsPage() {
             <Input type="date" className="h-8 w-auto text-[12.5px]" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         )}
+        <div className="flex items-center gap-2 border-s border-ink-200 ps-2">
+          <span className="text-[11.5px] font-medium text-ink-500">{ar ? "تقييم" : "Note"}</span>
+          <Select className="h-8 w-auto py-0 text-[12px]" value={minScore} onChange={(e) => setMinScore(e.target.value)}>
+            <option value="">{ar ? "من" : "Min"}</option>
+            {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}/5</option>)}
+          </Select>
+          <Select className="h-8 w-auto py-0 text-[12px]" value={maxScore} onChange={(e) => setMaxScore(e.target.value)}>
+            <option value="">{ar ? "إلى" : "Max"}</option>
+            {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score}/5</option>)}
+          </Select>
+        </div>
       </Card>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
@@ -86,6 +106,8 @@ export default function AnalyticsPage() {
               { l: ar ? "متوسط السلة" : "Panier moyen", v: f.money(data.kpi.aov) },
               { l: ar ? "رسائل مرسلة" : "Messages envoyés", v: f.num(data.kpi.messagesSent) },
               { l: ar ? "معدل الرد" : "Taux de réponse WA", v: `${data.kpi.replyRate} %` },
+              { l: ar ? "متوسط الرضا" : "Note moyenne", v: `${data.kpi.satisfactionAverage ?? 0} / 5`, tone: "green" as const },
+              { l: ar ? "ردود الرضا" : "Avis reçus", v: f.num(data.kpi.satisfactionResponses ?? 0) },
             ].map((k) => <KpiCard key={k.l} label={k.l} value={k.v} tone={k.tone} />)}
       </div>
 
@@ -167,6 +189,26 @@ export default function AnalyticsPage() {
                   <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #e6e8ee", fontSize: 12 }} formatter={(v) => [`${v} %`, ar ? "معدل التأكيد" : "Confirmation"]} />
                   <Line type="monotone" dataKey="rate" stroke={BRAND} strokeWidth={2} dot={false} />
                 </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>{ar ? "رضا الزبائن" : "Satisfaction client"}</CardTitle></CardHeader>
+          <CardBody className="h-64">
+            {data && (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={[1, 2, 3, 4, 5].map((score) => ({ score: `${score}/5`, count: Number(data.satisfaction.summary.distribution[String(score)] ?? 0) }))}
+                  margin={{ left: -18, right: 6, top: 6 }}
+                >
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="score" tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #e6e8ee", fontSize: 12 }} />
+                  <Bar dataKey="count" name={ar ? "التقييمات" : "Avis"} fill={SUCCESS} radius={[3, 3, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </CardBody>
