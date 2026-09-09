@@ -43,6 +43,52 @@ body {
   font-family: var(--font-sans);
 }
 
+@media (max-width: 1023px) {
+  html {
+    overscroll-behavior-y: none;
+  }
+  body {
+    min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .mobile-app-shell {
+    min-height: 100dvh;
+  }
+  .mobile-app-shell .card {
+    border-radius: 1rem;
+  }
+  .mobile-app-shell button,
+  .mobile-app-shell a {
+    -webkit-touch-callout: none;
+  }
+  .mobile-app-shell .field {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+  .mobile-actions {
+    scrollbar-width: none;
+  }
+  .mobile-actions::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.mobile-page-in {
+  min-width: 0;
+}
+
+@media (max-width: 1023px) and (prefers-reduced-motion: no-preference) {
+  .mobile-page-in {
+    animation: mobile-page 0.18s ease-out;
+  }
+}
+
+@keyframes mobile-page {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
 [dir="rtl"] body {
   letter-spacing: 0;
 }
