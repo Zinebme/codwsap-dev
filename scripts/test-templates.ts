@@ -449,7 +449,7 @@ async function main() {
   const { readFileSync } = await import("node:fs");
   const { pool } = await import("../src/server/db");
   const { TEMPLATE_SEEDS } = await import("../src/server/services/seedTemplates");
-  const { listTemplates } = await import("../src/server/services/templateFilters");
+  const { listTemplates, repairTemplateGroups } = await import("../src/server/services/templateFilters");
   const repairMerchant = "mch_tpl_repair";
   await merchant(repairMerchant, "Legacy merchant", "tpl-repair");
   // Existing merchant has all fifteen FR variants, including edited/Meta rows.
@@ -471,6 +471,10 @@ async function main() {
   record("0007 preserves all non-group fields", JSON.stringify(withoutGroups(beforeRepair)) === JSON.stringify(withoutGroups(repaired)));
   const repeatedMigration = await (await pool()).query(migration);
   record("0007 repeated repair changes zero rows", repeatedMigration.rowCount === 0);
+  await run("UPDATE whatsapp_templates SET template_group = 'confirmation', group_key = 'confirmation' WHERE merchant_id = ? AND name = 'order_shipped'", [repairMerchant]);
+  await repairTemplateGroups(repairMerchant);
+  const lazilyRepaired = await get<{ template_group: string; group_key: string }>("SELECT template_group, group_key FROM whatsapp_templates WHERE merchant_id = ? AND name = 'order_shipped'", [repairMerchant]);
+  record("Page-load repair persists the true group", lazilyRepaired?.template_group === "tracking" && lazilyRepaired.group_key === "tracking");
   const backfill = await seedTemplates(repairMerchant);
   record("Backfill adds 15 missing AR rows", backfill.languages.ar === 15);
   record("Backfill adds 15 missing EN rows", backfill.languages.en === 15);

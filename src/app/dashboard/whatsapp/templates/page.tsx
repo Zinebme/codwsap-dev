@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import useSWR from "swr";
-import { Plus, FileText, Trash2, Pencil, Languages } from "lucide-react";
+import { Plus, FileText, Trash2, Pencil, Languages, SlidersHorizontal, X } from "lucide-react";
 import { fetcher } from "@/components/dashboard/shell";
 import { useDashLocale, useFormat } from "@/components/dashboard/locale";
 import { PageHeader } from "@/components/dashboard/common";
@@ -30,6 +30,11 @@ export default function TemplatesPage() {
   if (statusFilter) query.set("status", statusFilter);
   const { data, isLoading, mutate } = useSWR<{ rows: Tpl[] }>(`/api/whatsapp/templates?${query}`, fetcher);
   const visibleRows = data?.rows ?? [];
+  const groupedRows = TEMPLATE_GROUPS.map((group) => ({
+    group,
+    rows: visibleRows.filter((template) => String(template.template_group ?? template.group_key) === group),
+  })).filter(({ rows }) => rows.length > 0);
+  const hasFilters = Boolean(groupFilter || languageFilter || statusFilter);
 
   async function save(body: Record<string, unknown>, id?: string) {
     const res = await fetch(id ? `/api/whatsapp/templates/${id}` : "/api/whatsapp/templates", {
@@ -58,31 +63,30 @@ export default function TemplatesPage() {
         }
       />
 
-      <Card className="flex flex-wrap gap-1.5 p-2.5">
-        <button onClick={() => setGroupFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${!groupFilter ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
-          {ar ? "الكل" : "Tous"}
-        </button>
-        {TEMPLATE_GROUPS.map((group) => (
-          <button key={group} onClick={() => setGroupFilter(group)} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${groupFilter === group ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}>
-            {ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}
-          </button>
-        ))}
-      </Card>
-
-      <Card className="flex flex-wrap gap-1.5 p-2.5" role="group" aria-label="Toutes les langues">
-        <button aria-pressed={languageFilter === ""} onClick={() => setLanguageFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Toutes les langues </button>
-        <button aria-pressed={languageFilter === "ar"} onClick={() => setLanguageFilter("ar")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "ar" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> العربية </button>
-        <button aria-pressed={languageFilter === "fr"} onClick={() => setLanguageFilter("fr")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "fr" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Français </button>
-        <button aria-pressed={languageFilter === "en"} onClick={() => setLanguageFilter("en")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${languageFilter === "en" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> English </button>
-      </Card>
-
-      <Card className="flex flex-wrap gap-1.5 p-2.5" role="group" aria-label="Tous les statuts">
-        <button aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Tous les statuts </button>
-        <button aria-pressed={statusFilter === "draft"} onClick={() => setStatusFilter("draft")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "draft" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Draft </button>
-        <button aria-pressed={statusFilter === "pending"} onClick={() => setStatusFilter("pending")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "pending" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Pending </button>
-        <button aria-pressed={statusFilter === "approved"} onClick={() => setStatusFilter("approved")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "approved" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Approved </button>
-        <button aria-pressed={statusFilter === "rejected"} onClick={() => setStatusFilter("rejected")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "rejected" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Rejected </button>
-        <button aria-pressed={statusFilter === "paused"} onClick={() => setStatusFilter("paused")} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-medium ${statusFilter === "paused" ? "bg-brand-600 text-white" : "text-ink-600 hover:bg-ink-100"}`}> Paused </button>
+      <Card className="space-y-3.5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-ink-800">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-700"><SlidersHorizontal className="h-3.5 w-3.5" /></span>
+            {ar ? "تصفية القوالب" : "Filtrer les templates"}
+          </div>
+          {hasFilters && <Button size="sm" variant="ghost" onClick={() => { setGroupFilter(""); setLanguageFilter(""); setStatusFilter(""); }}><X className="h-3.5 w-3.5" />{ar ? "مسح" : "Effacer"}</Button>}
+        </div>
+        <div className="flex gap-1 overflow-x-auto rounded-xl bg-ink-50 p-1" role="group" aria-label={ar ? "المجموعة" : "Groupe métier"}>
+          <button onClick={() => setGroupFilter("")} className={`shrink-0 rounded-lg px-3 py-2 text-[12px] font-medium transition ${!groupFilter ? "bg-white text-brand-700 shadow-sm" : "text-ink-500 hover:text-ink-800"}`}>{ar ? "الكل" : "Tous"}</button>
+          {TEMPLATE_GROUPS.map((group) => <button key={group} onClick={() => setGroupFilter(group)} className={`shrink-0 rounded-lg px-3 py-2 text-[12px] font-medium transition ${groupFilter === group ? "bg-white text-brand-700 shadow-sm" : "text-ink-500 hover:text-ink-800"}`}>{ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}</button>)}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={ar ? "اللغة" : "Langue"}>
+            <Select value={languageFilter} onChange={(event) => setLanguageFilter(event.target.value)}>
+              <option value="">{ar ? "كل اللغات" : "Toutes les langues"}</option><option value="ar">العربية</option><option value="fr">Français</option><option value="en">English</option>
+            </Select>
+          </Field>
+          <Field label={ar ? "حالة ميتا" : "Statut Meta"}>
+            <Select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="">{ar ? "كل الحالات" : "Tous les statuts"}</option><option value="draft">Draft</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="paused">Paused</option>
+            </Select>
+          </Field>
+        </div>
       </Card>
 
       {isLoading ? (
@@ -90,8 +94,15 @@ export default function TemplatesPage() {
       ) : !visibleRows.length ? (
         <Card><EmptyState icon={FileText} title={ar ? "لا توجد قوالب" : "Aucun template"} /></Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visibleRows.map((t) => (
+        <div className="space-y-6">
+          {groupedRows.map(({ group, rows }) => <section key={group} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-[14px] font-semibold text-ink-900">{ar ? TEMPLATE_GROUP_META[group].ar : TEMPLATE_GROUP_META[group].fr}</h2>
+              <Badge tone="gray">{rows.length}</Badge>
+              <div className="h-px flex-1 bg-ink-150" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map((t) => (
             <Card key={String(t.id)} className="flex flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -130,6 +141,8 @@ export default function TemplatesPage() {
               </div>
             </Card>
           ))}
+            </div>
+          </section>)}
         </div>
       )}
 
