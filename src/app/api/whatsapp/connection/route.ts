@@ -1,44 +1,36 @@
 import { z } from "zod";
 import { requirePermission, clientIp } from "@/server/auth/session";
 import { jsonError, ok, parseBody } from "@/server/http";
-import { get, run, uid, nowIso } from "@/server/db";
-import { encryptSecret, decryptSecret, maskSecret, randomToken } from "@/server/crypto";
+import { all, get, run, uid, nowIso } from "@/server/db";
+import { encryptSecret, decryptSecret, randomToken } from "@/server/crypto";
+import { safeConnectionPayload, type ConnectionRow } from "@/server/connectors/whatsapp";
 import { audit, apiLog } from "@/server/services/audit";
 
 export const dynamic = "force-dynamic";
 
-/** Never returns raw credentials — only masked previews. */
+/**
+ * Never returns raw credentials — only masked previews. The payload is an
+ * EXPLICIT projection (safeConnectionPayload): the webhook signing secret and
+ * the encrypted credentials blob can never reach the browser, even if new
+ * sensitive columns are added to the table in the future.
+ */
 export async function GET() {
   try {
     const ctx = await requirePermission("integrations.read");
-    const conn = await get<{
-      id: string;
-      display_phone: string | null;
-      phone_number_id: string | null;
-      business_account_id: string | null;
-      credentials_encrypted: string | null;
-      webhook_verify_token: string | null;
-      status: string;
-      quality_rating: string | null;
-      meta_metrics: string | null;
-      last_webhook_at: string | null;
-      last_message_at: string | null;
-      last_error: string | null;
-      last_error_at: string | null;
-    }>("SELECT * FROM whatsapp_connections WHERE merchant_id = ?", [ctx.merchantId]);
-    if (!conn) return ok({ connection: null });
+    const conn = await get<ConnectionRow & { credentials_encrypted: string | null }>(
+      "SELECT * FROM whatsapp_connections WHERE merchant_id = ?",
+      [ctx.merchantId],
+    );
+    // Shape stays stable with or without a connection: the settings page
+    // renders recentErrors unconditionally (an absent array crashed it).
+    if (!conn) return ok({ connection: null, recentErrors: [] });
     const creds = decryptSecret<{ access_token?: string }>(conn.credentials_encrypted);
-    const recentErrors = (await import("@/server/db")).all(
+    const recentErrors = await all(
       "SELECT operation, error, created_at FROM api_logs WHERE merchant_id = ? AND service = 'whatsapp' AND ok = 0 ORDER BY created_at DESC LIMIT 5",
       [ctx.merchantId],
     );
     return ok({
-      connection: {
-        ...conn,
-        credentials_encrypted: undefined,
-        access_token_masked: maskSecret(creds?.access_token),
-        webhook_url: `/api/webhooks/whatsapp/${ctx.merchantId}`,
-      },
+      connection: safeConnectionPayload(conn, creds?.access_token),
       recentErrors,
     });
   } catch (e) {

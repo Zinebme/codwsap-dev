@@ -94,6 +94,29 @@ export function isCustomerRelevantDeliveryStatus(normalized: string): boolean {
   return !NON_CUSTOMER_EVENTS.has(normalized);
 }
 
+/** Caractères du bloc arabe Unicode (détecte un message écrit en arabe). */
+const ARABIC_SCRIPT = /[\u0600-\u06FF]/;
+
+/**
+ * Langue de travail d'un client, déduite de SES messages ENTRANTS (les 5 plus
+ * récents) : au moins un texte arabe -> « ar », sinon « fr ».
+ *
+ * Heuristique conservatrice : c'est le client qui parle, pas la plateforme —
+ * aucun message sortant n'est pris en compte, et le français reste la langue
+ * de repli de la plateforme.
+ */
+export async function customerLanguage(merchantId: string, customerId: string | null): Promise<"fr" | "ar"> {
+  if (!customerId) return "fr";
+  const rows = await all<{ body: string | null }>(
+    `SELECT body FROM whatsapp_messages
+     WHERE merchant_id = ? AND customer_id = ? AND direction = 'inbound'
+     ORDER BY created_at DESC, id DESC LIMIT 5`,
+    [merchantId, customerId],
+  );
+  if (rows.some((r) => r.body && ARABIC_SCRIPT.test(r.body))) return "ar";
+  return "fr";
+}
+
 export type SendRequest = {
   merchantId: string;
   orderId?: string | null;

@@ -161,6 +161,60 @@ async function main() {
   record("app", "GET /api/settings renvoie le marchand A uniquement", settingsMerchant === A.id,
     `merchant=${settingsMerchant}`);
 
+  // Réglages WhatsApp : le secret de signature du webhook et les identifiants
+  // de B ne doivent jamais apparaître dans les réponses de A — même quand A
+  // n'a PAS encore de connexion (cas le plus fréquent, et celui qui crashait
+  // la page avant le correctif : recentErrors absent de la réponse).
+  await admin.query(
+    `INSERT INTO whatsapp_connections
+       (id, merchant_id, display_phone, phone_number_id, business_account_id,
+        credentials_encrypted, webhook_verify_token, webhook_secret, status)
+     VALUES ('wac_iso_b', $1, '+213550999888', 'bnid_isolation_987654', 'baid_isolation_432109',
+             'v1.blob-isolation-b', 'vt_isolation_b', 'whsec_isolation_b_ne_jamais_fuir', 'connected')
+     ON CONFLICT (id) DO NOTHING`,
+    [B.id],
+  );
+  const waSettings = await api(cookieA, "/api/whatsapp/connection");
+  const waSettingsText = JSON.stringify(waSettings.body ?? {});
+  record("app", "Réglages WhatsApp : aucun secret de webhook dans la réponse de A",
+    !waSettingsText.includes("whsec_isolation_b_ne_jamais_fuir") && !waSettingsText.includes('"webhook_secret"'));
+  record("app", "Réglages WhatsApp : aucun identifiant de B dans la réponse de A",
+    !waSettingsText.includes("bnid_isolation_987654") &&
+      !waSettingsText.includes("baid_isolation_432109") &&
+      !waSettingsText.includes("+213550999888"));
+  record("app", "Réglages WhatsApp : recentErrors toujours un tableau (page stable sans connexion)",
+    waSettings.status === 200 &&
+      (waSettings.body as Record<string, unknown> | null)?.connection === null &&
+      Array.isArray((waSettings.body as Record<string, unknown> | null)?.recentErrors));
+
+  // A enregistre SES identifiants : la connexion de B doit rester strictement intacte.
+  const connBBefore = await admin.query<{ credentials_encrypted: string; display_phone: string }>(
+    "SELECT credentials_encrypted, display_phone FROM whatsapp_connections WHERE merchant_id = $1",
+    [B.id],
+  );
+  const waPut = await api(cookieA, "/api/whatsapp/connection", {
+    method: "PUT",
+    body: JSON.stringify({
+      displayPhone: "+213550111222",
+      phoneNumberId: "anid_isolation_111111",
+      businessAccountId: "aaid_isolation_222222",
+      accessToken: "EAAGisolation-A-token-000111",
+    }),
+  });
+  const connBAfter = await admin.query<{ credentials_encrypted: string; display_phone: string }>(
+    "SELECT credentials_encrypted, display_phone FROM whatsapp_connections WHERE merchant_id = $1",
+    [B.id],
+  );
+  record("app", "Réglages WhatsApp : le PUT de A ne modifie pas la connexion de B",
+    waPut.status === 200 &&
+      connBAfter.rows[0]?.credentials_encrypted === connBBefore.rows[0]?.credentials_encrypted &&
+      connBAfter.rows[0]?.display_phone === connBBefore.rows[0]?.display_phone,
+    `HTTP ${waPut.status}`);
+  const waSettings2 = await api(cookieA, "/api/whatsapp/connection");
+  const waSettings2Text = JSON.stringify(waSettings2.body ?? {});
+  record("app", "Réglages WhatsApp : le jeton de A n'apparaît que masqué",
+    !waSettings2Text.includes("EAAGisolation-A-token-000111") && waSettings2Text.includes("access_token_masked"));
+
   // 2. Lecture directe d'une ressource de B -> 404.
   if (orderB) {
     const r = await api(cookieA, `/api/orders/${orderB.id}`);

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requirePermission, HttpError, clientIp } from "@/server/auth/session";
 import { jsonError, ok, parseBody } from "@/server/http";
 import { get, run, nowIso } from "@/server/db";
+import { extractTemplateVariables } from "@/server/connectors/whatsapp";
 import { audit } from "@/server/services/audit";
 
 const schema = z.object({
@@ -19,7 +20,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const tpl = await get("SELECT id FROM whatsapp_templates WHERE id = ? AND merchant_id = ?", [id, ctx.merchantId]);
     if (!tpl) throw new HttpError(404, "Template introuvable.", "not_found");
     const body = await parseBody(req, schema);
-    const variables = body.body ? JSON.stringify(Array.from(body.body.matchAll(/\{\{\s*([\w\d_]+)\s*\}\}/g)).map((m) => m[1])) : null;
+    // La langue fait partie de la clé (nom, langue) : une modification du corps
+    // ne change jamais la langue du template.
+    const variables = body.body ? JSON.stringify(extractTemplateVariables(body.body)) : null;
     await run(
       `UPDATE whatsapp_templates SET body = COALESCE(?, body), category = COALESCE(?, category), event_key = ?,
         status = COALESCE(?, status), variables = COALESCE(?, variables), updated_at = ? WHERE id = ? AND merchant_id = ?`,

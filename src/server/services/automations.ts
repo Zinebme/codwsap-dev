@@ -2,7 +2,7 @@ import "server-only";
 import { get, run, uid, nowIso } from "@/server/db";
 import type { AutomationType, DeliveryStatus } from "@/lib/domain";
 import { AUTOMATION_META, formatDzd } from "@/lib/domain";
-import { queueMessage, isCustomerRelevantDeliveryStatus, orderVariables } from "@/server/services/messaging";
+import { queueMessage, isCustomerRelevantDeliveryStatus, orderVariables, customerLanguage } from "@/server/services/messaging";
 import { notify } from "@/server/services/notifications";
 import { enqueueJob, toSql } from "@/server/jobs/queue";
 
@@ -88,7 +88,10 @@ async function runOrderAutomation(type: AutomationType, order: OrderRow, trigger
     await logRun(order.merchant_id, automation.id, order.id, trigger, "skipped", "no_phone");
     return;
   }
-  const templateId = automation.template_id ?? await defaultTemplateFor(order.merchant_id, type);
+  // Choix du template : l'assignation EXPLICITE de l'automatisation prime ;
+  // à défaut, la résolution multilingue suit la langue du client.
+  const language = order.customer_id ? await customerLanguage(order.merchant_id, order.customer_id) : "fr";
+  const templateId = automation.template_id ?? await resolveEventTemplate(order.merchant_id, type, language);
   const outcome = await queueMessage({
     merchantId: order.merchant_id,
     orderId: order.id,
@@ -108,12 +111,27 @@ async function runOrderAutomation(type: AutomationType, order: OrderRow, trigger
   } else await logRun(order.merchant_id, automation.id, order.id, trigger, "failed", outcome.error);
 }
 
-async function defaultTemplateFor(merchantId: string, type: AutomationType): Promise<string | null> {
-  const row = await get<{ id: string }>(
+/**
+ * Résolution MULTILINGUE du template par défaut d'un évènement, dans cet ordre :
+ *   1. le template APPROUVÉ dans la langue du client ;
+ *   2. sinon sa version française (langue de repli de la plateforme) ;
+ *   3. sinon n'importe quel template approuvé pour l'évènement
+ *      (comportement historique d'avant le multilingue).
+ * Rien n'est inventé : sans template approuvé, aucun id n'est retourné.
+ */
+export async function resolveEventTemplate(merchantId: string, eventKey: AutomationType, language: string): Promise<string | null> {
+  for (const lang of Array.from(new Set([language, "fr"]))) {
+    const row = await get<{ id: string }>(
+      "SELECT id FROM whatsapp_templates WHERE merchant_id = ? AND event_key = ? AND status = 'approved' AND language = ? ORDER BY updated_at DESC LIMIT 1",
+      [merchantId, eventKey, lang],
+    );
+    if (row) return row.id;
+  }
+  const any = await get<{ id: string }>(
     "SELECT id FROM whatsapp_templates WHERE merchant_id = ? AND event_key = ? AND status = 'approved' ORDER BY updated_at DESC LIMIT 1",
-    [merchantId, type],
+    [merchantId, eventKey],
   );
-  return row?.id ?? null;
+  return any?.id ?? null;
 }
 
 /* ------------------------------- Triggers -------------------------------- */

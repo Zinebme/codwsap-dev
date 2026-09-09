@@ -13,7 +13,7 @@ export default function WhatsappSettings() {
   const f = useFormat();
   const ar = locale === "ar";
   const { push } = useToast();
-  const { data, isLoading, mutate } = useSWR<{ connection: Record<string, string | null> | null; recentErrors: Record<string, string>[] }>("/api/whatsapp/connection", fetcher);
+  const { data, isLoading, mutate } = useSWR<{ connection: Record<string, string | null> | null; recentErrors?: Record<string, string>[] }>("/api/whatsapp/connection", fetcher);
   const [saving, setSaving] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
   const c = data?.connection;
@@ -144,7 +144,7 @@ export default function WhatsappSettings() {
           <Card>
             <CardHeader><CardTitle>{ar ? "الأخطاء الأخيرة" : "Erreurs récentes"}</CardTitle></CardHeader>
             <CardBody>
-              {!data?.recentErrors.length ? (
+              {!data?.recentErrors?.length ? (
                 <p className="text-[13px] text-ink-500">{ar ? "لا توجد أخطاء." : "Aucune erreur récente."}</p>
               ) : (
                 <div className="space-y-2">
